@@ -1,0 +1,66 @@
+{
+  "name": "ohmyflow",
+  "version": "1.0.0",
+  "description": "MyFlow by DOSS Clone - AI Photo Culler 100% Local, Native Windows",
+  "author": "OhMyFlow",
+  "main": "dist-electron/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev:electron": "npm run build:electron && concurrently \"vite --host\" \"wait-on http://localhost:5173 && electron dist-electron/main.js\"",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "start": "electron dist-electron/main.js",
+    "pack": "npm run build && npm run build:electron && electron-packager . OhMyFlow --platform=win32 --arch=x64 --out=release --overwrite --prune --ignore=\"^/(test-photos|release|dist-electron/electron)\" --icon=build/icon.ico",
+    "pack:legacy": "npm run build && npm run build:electron && electron-builder --dir",
+    "dist": "npm run build && npm run build:electron && electron-builder",
+    "dist:win": "npm run build && npm run build:electron && electron-builder --win --x64"
+  },
+  "dependencies": {
+    "sharp": "^0.33.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3",
+    "electron-packager": "^17.1.2",
+    "png-to-ico": "^3.0.2",
+    "postcss": "^8.4.38",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^3.4.4",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0",
+    "vite-plugin-electron": "^0.28.0",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.ohmyflow.app",
+    "productName": "OhMyFlow",
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  }
+}

@@ -1,0 +1,35 @@
+# ── Dependencies ─────────────────────────────────────────────
+node_modules/
+
+# ── Build outputs (diregenerasi via `npm run pack`) ──────────
+dist/
+dist-electron/
+release/
+*.tsbuildinfo
+
+# ── Foto pribadi (besar & privat — JANGAN PERNAH di-commit) ──
+DIGICAM/
+FIX KERAMIK/
+
+# ── Log ──────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Secrets (proyek ini tidak memakai API key apa pun;
+#     aturan ini pengaman agar tidak ada yang lolos) ──────────
+.env
+.env.*
+!.env.example
+
+# ── Sistem operasi ───────────────────────────────────────────
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ── Editor & cache ───────────────────────────────────────────
+.vscode/
+.idea/
+.vite/
+.cache/
