@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/logo.png" width="128" alt="OhMyFlow logo" />
   <h1>OhMyFlow</h1>
-  <p><strong>AI Photo Culler untuk Windows — pilih foto terbaik 10× lebih cepat, 100% offline.</strong></p>
+  <p><strong>AI photo culler for Windows. Pick your best shots 10x faster, 100% offline.</strong></p>
   <p>
     <img src="https://img.shields.io/badge/version-1.0.0-blue" alt="version" />
     <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4" alt="platform" />
@@ -13,122 +13,126 @@
 
 ---
 
-## Tentang
+## About
 
-OhMyFlow adalah aplikasi desktop Windows untuk **menyeleksi (culling) ribuan foto hasil pemotretan dalam hitungan menit**. Cukup arahkan ke folder foto — OhMyFlow memilahnya menjadi tiga kategori:
+OhMyFlow is a Windows desktop app that **culls thousands of photos from a shoot in minutes**. Point it at a folder and it sorts everything into three buckets:
 
-| Kategori | Arti |
-|----------|------|
-| 🟢 **Picks** | Foto terbaik: tajam, eksposur bagus, komposisi layak |
-| 🟡 **Maybe** | Meragukan: perlu keputusan manual sekilas |
-| 🔴 **Rejects** | Gagal: blur, mata tertutup, gelap total, duplikat burst, frame kosong |
+| Bucket | Meaning |
+|--------|---------|
+| 🟢 **Picks** | The best shots: sharp, well exposed, solid composition |
+| 🟡 **Maybe** | Borderline shots that deserve a quick human glance |
+| 🔴 **Rejects** | Failures: blurry shots, closed eyes, crushed blacks, burst duplicates, blank frames |
 
-Hasil seleksi dapat **diekspor sebagai file XMP sidecar** (Rating 5/3/1 + Label Green/Yellow/Red) sehingga langsung terbaca di **Adobe Lightroom / Bridge / Camera Raw** — tanpa langkah tambahan. File asli tidak pernah dipindah, diubah, atau dihapus; yang ditulis hanya file `.xmp` di sampingnya.
+Results export as **XMP sidecar files** (Rating 5/3/1 plus Green/Yellow/Red labels), so they show up directly in **Adobe Lightroom, Bridge, and Camera Raw** with no extra steps. Your originals are never moved, modified, or deleted. Only `.xmp` files are written next to them.
 
-Seluruh analisis kecerdasan buatan berjalan **di perangkat sendiri (on-device)** memakai ONNX Runtime + heuristik visi komputer klasik. Tidak ada foto yang diunggah ke internet, tidak ada API key, tidak ada biaya langganan.
+All of the AI runs **on your own machine** using ONNX Runtime plus classic computer vision heuristics. No photo ever leaves your computer. No API keys, no cloud, no subscription.
 
-## Fitur Utama
+## Features
 
-- **Culling otomatis 3 mode** — Fast (sortir awal), Balance (harian), High (seleksi akhir paling teliti), masing-masing dengan estimasi waktu live.
-- **Deteksi konten otomatis** — foto manusia dinilai dengan logika wajah & mata; foto produk/objek (mulus, tanpa wajah) dinilai dengan logika exposure–komposisi–warna tanpa false-positive "mata tertutup".
-- **Penilaian multi-sinyal** — ketajaman fokus (Laplacian + ketajaman subjek + kerapatan tepi), exposure & clipping highlight/shadow, keseimbangan putih, komposisi/framing, duplikat perceptual-hash, dan status mata.
-- **Alasan per foto** — setiap keputusan disertai alasan dalam Bahasa Indonesia & Inggris (mis. *"Blur / tidak fokus"*, *"Duplikat / burst"*).
-- **RAW+JPG pairing** — pasangan `IMG_1234.CR3` + `IMG_1234.JPG` dikenali sebagai satu foto dengan rating kompak.
-- **Pindah file hasil seleksi** — pindahkan foto Picks (opsional: sertakan Maybe) ke folder baru; pasangan RAW+JPG dan file `.xmp` ikut terbawa, nama kembar diberi nomor otomatis.
-- **Lightbox review** — klik foto untuk pratinjau resolusi penuh, navigasi keyboard (←/→, 1/2/3 untuk menilai, Esc tutup).
-- **Thumbnail lazy + cache disk** — folder ribuan foto tetap ringan dibuka.
-- **Bilingual** — Bahasa Indonesia & Inggris.
+- **Three auto-culling modes** - Fast (first pass), Balance (daily driver), High (final, most thorough selection), each with a live time estimate.
+- **Automatic content detection** - photos of people are judged with face and eye logic, while smooth object shots (product, ceramics, food) are judged on exposure, composition, and color with no false "closed eyes" verdicts.
+- **Multi-signal scoring** - focus sharpness (Laplacian plus subject sharpness plus edge density), exposure and highlight/shadow clipping, white balance, framing and composition, perceptual-hash duplicates, and eye state.
+- **A reason for every photo** - each decision ships with a short explanation in Indonesian and English (for example *"Blurry / out of focus"* or *"Duplicate / burst"*).
+- **RAW+JPG pairing** - pairs like `IMG_1234.CR3` + `IMG_1234.JPG` are treated as one photo with one shared rating.
+- **Move culled files** - move Picks (optionally including Maybe) into a fresh folder. RAW+JPG pairs and `.xmp` files come along, and name collisions get numbered automatically.
+- **Lightbox review** - click any photo for a full-resolution preview with keyboard navigation (arrow keys to move, 1/2/3 to rate, Esc to close).
+- **Lazy thumbnails with disk cache** - folders with thousands of photos stay light and fast.
+- **Bilingual UI** - Indonesian and English.
 
-## Cara Kerja
+## How It Works
 
-1. **Pilih folder** — dari disk lokal atau langsung dari kartu memori.
-2. **Pilih mode** — Fast / Balance / High (ada estimasi waktu per jumlah foto).
-3. **Mulai Culling** — AI bekerja lokal; progres tampil real-time dan bisa dibatalkan.
-4. **Review** — filter Picks / Maybe / Rejects, koreksi dengan sekali klik atau via lightbox.
-5. **Ekspor** — tulis XMP untuk Lightroom, dan/atau pindahkan file Picks ke folder baru.
+1. **Pick a folder** - from local disk or straight off a memory card.
+2. **Pick a mode** - Fast, Balance, or High (each shows an estimate for your photo count).
+3. **Start culling** - the AI works locally, with live progress you can cancel anytime.
+4. **Review** - filter by Picks, Maybe, or Rejects and correct anything with one click or in the lightbox.
+5. **Export** - write XMP for Lightroom, and optionally move your Picks into a new folder.
 
-## Instalasi & Menjalankan
+## Installation and Running
 
-### Prasyarat
+### Requirements
 
-- Windows 10/11 64-bit
-- [Node.js](https://nodejs.org/) 24+ (hanya untuk development / build dari source)
-- GPU NVIDIA opsional (akselerasi otomatis bila tersedia; CPU tetap jalan)
+- Windows 10/11, 64-bit
+- [Node.js](https://nodejs.org/) 24 or newer (only needed to build from source)
+- An NVIDIA GPU is optional (used automatically when present; CPU works fine)
 
-### Menjalankan versi rilis (tanpa install tools)
+### Run the release build (no tools needed)
 
-Unduh `OhMyFlow.exe` dari halaman [Releases](../../releases), lalu jalankan langsung (portable, tanpa instalasi).
+Download `OhMyFlow.exe` from the [Releases](../../releases) page and run it directly. It is portable and needs no installation.
 
-### Development dari source
+### Build from source
 
 ```bash
 git clone https://github.com/0xMinomus/OhMyFlow.git
 cd OhMyFlow
 npm install
 
-# mode development (hot-reload)
+# development mode with hot reload
 npm run dev
 
-# build aplikasi Windows (.exe portable di release/)
+# build the Windows app (lands in release/)
 npm run pack
 ```
 
-| Perintah | Fungsi |
-|----------|--------|
-| `npm run dev` | Vite dev server + Electron hot-reload |
-| `npm run build` | Type-check + build renderer & main process |
-| `npm run pack` | Build penuh + kemas `release/OhMyFlow-win32-x64/OhMyFlow.exe` |
-| `npm start` | Jalankan hasil build (`dist/`) tanpa mengemas |
+| Command | What it does |
+|---------|--------------|
+| `npm run dev` | Vite dev server plus Electron with hot reload |
+| `npm run build` | Type-check and build the renderer and main process |
+| `npm run pack` | Full build plus packaging into `release/OhMyFlow-win32-x64/OhMyFlow.exe` |
+| `npm start` | Run the built output in `dist/` without packaging |
 
-> 💡 **Coba cepat:** setelah `npm run dev`, arahkan aplikasi ke folder `test-photos/` (berisi foto contoh) untuk melihat alur kerja end-to-end.
+> Tip: for a quick end-to-end tour after `npm run dev`, point the app at the `test-photos/` folder (sample images included in this repo).
 
-## Format File Didukung
+## Supported File Formats
 
-| Kategori | Ekstensi |
-|----------|----------|
-| Standar | `.jpg` `.jpeg` `.png` `.tiff` `.tif` `.webp` `.bmp` |
+| Category | Extensions |
+|----------|-----------|
+| Standard | `.jpg` `.jpeg` `.png` `.tiff` `.tif` `.webp` `.bmp` |
 | Apple | `.heic` `.heif` |
 | RAW | `.cr2` `.cr3` `.nef` `.arw` `.raf` `.dng` `.rw2` `.orf` `.pef` |
 
-RAW tanpa pratinjau JPEG bawaan tetap diproses dan ditandai jelas; rating-nya ditulis ke XMP seperti biasa.
+RAW files without an embedded JPEG preview are still processed and clearly marked. Their ratings are written to XMP like any other photo.
 
-## Struktur Proyek
+## Project Structure
 
 ```
 OhMyFlow/
-├── electron/            # Main process: IPC, scan folder, thumbnail, XMP, pindah file
+├── electron/            # Main process: IPC, folder scan, thumbnails, XMP, file mover
 │   ├── main.ts
-│   └── preload.ts       # Jembatan aman renderer ↔ main (contextBridge)
+│   └── preload.ts       # Secure renderer-to-main bridge (contextBridge)
 ├── src/
-│   ├── components/      # UI: folder picker, mode, grid, lightbox, modal, header
-│   ├── lib/ai-engine/   # Mesin culling: blur, aesthetic, composition,
-│   │                    #   duplicate, face, culler (orkestrasi + preset per mode)
+│   ├── components/      # UI: folder picker, modes, grid, lightbox, modal, header
+│   ├── lib/ai-engine/   # Culling engine: blur, aesthetic, composition,
+│   │                    #   duplicate, face, culler (orchestration plus per-mode presets)
 │   ├── lib/thumbCache.ts
-│   ├── store/           # State aplikasi
+│   ├── store/           # App state
 │   └── types/
-├── public/logo.png      # Logo aplikasi
-├── build/               # icon.ico + asset packaging Windows
-└── test-photos/         # Foto contoh untuk uji coba cepat
+├── public/logo.png      # App logo
+├── build/               # icon.ico plus Windows packaging assets
+└── test-photos/         # Sample photos for a quick trial run
 ```
 
-## Privasi & Keamanan
+## Privacy and Safety
 
-- **100% offline** — tidak ada request jaringan untuk pemrosesan foto; internet hanya dibutuhkan sesekali untuk download tooling development, bukan oleh aplikasinya.
-- **Tanpa API key / tanpa cloud** — semua model dan heuristik berjalan di CPU/GPU lokal.
-- **Non-destruktif** — file foto asli tidak pernah diubah, dipindah, atau dihapus oleh proses culling maupun ekspor XMP. (Fitur *Pindah file* bersifat eksplisit, selalu menampilkan tujuan + jumlah file, dan memberi nomor otomatis pada nama kembar.)
+- **Fully offline** - photo processing makes zero network requests. The app itself never needs the internet.
+- **No API keys, no cloud** - every model and heuristic runs on local CPU/GPU.
+- **Non-destructive** - culling and XMP export never modify, move, or delete original photos. (The *Move files* action is explicit: it always shows the destination and file count first, and numbers duplicate names automatically.)
 
 ## Roadmap
 
-- [ ] Deteksi kedip tier-lanjut (lash-line modeling) untuk wedding candid
-- [ ] Decode pratinjau RAW penuh (embedded JPEG extraction)
-- [ ] Database SQLite untuk histori koreksi & pembelajaran preferensi
+- [ ] Next-level blink detection (lash-line modeling) for wedding candids
+- [ ] Full RAW preview decoding (embedded JPEG extraction)
+- [ ] SQLite database for correction history and taste learning
 - [ ] Auto-update via electron-updater
-- [ ] Installer NSIS + penandatanganan kode (code signing)
+- [ ] NSIS installer plus code signing
 
-## Kontribusi
+## Contributing
 
-Kontribusi dipersilakan — fork, buat branch fitur (`git checkout -b fitur/nama-fitur`), commit dengan pesan yang jelas, lalu buka Pull Request. Untuk perubahan perilaku culling, sertakan hasil benchmark sebelum/sesudah pada folder uji agar bisa direview objektif.
+Contributions are welcome. Fork the repo, create a feature branch (`git checkout -b feature/my-feature`), commit with a clear message, and open a pull request. For changes to culling behavior, please include before/after benchmark numbers on a test folder so the change can be reviewed objectively.
 
-## Lisensi
+## License
 
-Dirilis di bawah lisensi [MIT](LICENSE).
+OhMyFlow is open source software licensed under the [MIT License](LICENSE).
+
+You are free to use, copy, modify, merge, publish, distribute, sublicense, and sell copies of the software, including for commercial purposes, as long as the original copyright notice and license text are included with any substantial portion of it.
+
+Copyright (c) 2026 0xMinomus. See [LICENSE](LICENSE) for the full legal text.
