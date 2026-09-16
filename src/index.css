@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { font-family: 'Cascadia Mono', ui-monospace, Consolas, 'Courier New', monospace; }
+html, body, #root { height: 100%; background: #000; }
+::selection { background: #ff3b30; color: #fff; }
+:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: 2px; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #141416; }
+::-webkit-scrollbar-thumb { background: #2a2a2e; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3a3e; }
