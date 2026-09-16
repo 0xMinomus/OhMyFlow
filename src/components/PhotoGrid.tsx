@@ -94,9 +94,9 @@ function PhotoCard({ p, lang, index, onOpen }: { p: PhotoItem; lang: 'id' | 'en'
           </span>
         )}
         <div className="absolute bottom-1.5 left-1.5 right-1.5 hidden gap-1 group-hover:flex group-focus-within:flex">
-          <button onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'picks') }} className="flex-1 rounded-sm bg-emerald-400 py-1 font-mono text-[10px] font-bold text-black">Picks</button>
-          <button onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'maybe') }} className="flex-1 rounded-sm bg-amber-300 py-1 font-mono text-[10px] font-bold text-black">Maybe</button>
-          <button onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'rejects') }} className="flex-1 rounded-sm bg-red-400 py-1 font-mono text-[10px] font-bold text-black">Reject</button>
+          <button disabled={p.category==='picks'} onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'picks') }} className="flex-1 rounded-sm bg-emerald-400 py-1 font-mono text-[10px] font-bold text-black disabled:cursor-not-allowed disabled:opacity-40">Picks</button>
+          <button disabled={p.category==='maybe'} onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'maybe') }} className="flex-1 rounded-sm bg-amber-300 py-1 font-mono text-[10px] font-bold text-black disabled:cursor-not-allowed disabled:opacity-40">Maybe</button>
+          <button disabled={p.category==='rejects'} onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'rejects') }} className="flex-1 rounded-sm bg-red-400 py-1 font-mono text-[10px] font-bold text-black disabled:cursor-not-allowed disabled:opacity-40">Reject</button>
         </div>
       </div>
       <div className="px-2 py-1.5 flex flex-col">

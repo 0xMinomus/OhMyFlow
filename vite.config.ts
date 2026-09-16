@@ -35,7 +35,12 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    strictPort: true
+    strictPort: true,
+    // COOP/COEP agar SAB/ONNX-wasm juga jalan di dev (credentialless = HMR aman).
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+    },
   },
   build: {
     outDir: 'dist'

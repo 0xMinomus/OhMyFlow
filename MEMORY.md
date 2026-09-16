@@ -5,7 +5,7 @@
 > hasil kalibrasi baru, gotcha build baru, atau keputusan user yang baru.
 > Lihat protokolnya di bagian paling bawah.
 
-Terakhir diperbarui: 2026-09-16 (sesi kalibrasi bulbah + dokumentasi).
+Terakhir diperbarui: 2026-09-16 (fix foto gelap lolos Picks: objMode + lum).
 
 ---
 
@@ -40,7 +40,8 @@ Terakhir diperbarui: 2026-09-16 (sesi kalibrasi bulbah + dokumentasi).
   `git check-ignore` + `git status` bersih):
   `node_modules/`, `dist/`, `dist-electron/`, `release/`, `*.log`, `.env*`,
   file OS/editor — dan yang paling penting **folder foto pribadi**:
-  `DIGICAM/` (±198 MB), `FIX KERAMIK/` (±264 MB), `bulbah/` (±5,2 GB).
+   `DIGICAM/` (±198 MB), `FIX KERAMIK/` (±264 MB), `bulbah/` (±5,2 GB),
+   `Foto OSIS skvela/` (±4,8 GB, 1278 JPG event).
 - Aturan keras: folder foto user TIDAK BOLEH masuk repo dalam keadaan apa pun.
   Kalau user menyebut folder foto baru, hal PERTAMA yang dilakukan adalah
   menambahkannya ke `.gitignore` sebelum kerja.
@@ -81,14 +82,23 @@ Picks/Maybe/Rejects → review grid (lazy, paginasi 60) → ekspor XMP / pindah 
 | hardBlurBelow / picksFocusMin | 45 / 60 | 55 / 60 | 60 / 60 |
 | blownRejectAt / confRejectFloor | 18 / .45 | 14 / .32 | 12 / .28 |
 | eyeThreshold / exposureHR / compHR | .70 / F / F | .60 / T / F | .50 / T / T |
+| darkRejectAt (exposure hancur → rejects) | 0 (mati) | 0 (mati) | 15 |
 
 - Urutan vonis di `culler.ts`: mata-tertutup → accidental → hardBlur
-  (kecuali objek-mulus/proteksi-mata) → gelap-total → blown-ekstrem → blownMid →
-  komposisi (high) → duplikat (s<35 reject, else Maybe; high: +softestInBurst) →
-  picks (+gate fokus/kliping/komposisi; objek −10) → rejectBelow → jaring pengaman.
+   (kecuali objek-mulus/proteksi-mata) → gelap-total → **darkReject (high saja:
+   exposure ≤15 + lum<35 + clipHi<5, bukan whiteBg)** → blown-ekstrem → blownMid →
+   komposisi (high) → duplikat (s<35 reject, else Maybe; high: +softestInBurst) →
+   picks (+gate fokus/kliping/komposisi; objek −10) → rejectBelow → jaring pengaman.
 - **Mode objek otomatis** (tanpa wajah + permukaan mulus p50<2 + rim tajam p99>18):
   skor = aesthetic×0.6 + komposisi×0.4, tanpa vonis blur, palang picks −10.
   Dibuktikan 0/231 cocok di foto manusia (tidak bocor).
+- **Tilt** (`tilt.ts`, semua mode): horizon miring terdeteksi via puncak energi
+  tepi-horizontal kiri vs kanan → penalti skor −6 + alasan, TANPA hard-reject.
+  Terverifikasi sintetis + 1 true-positive keramik; 1 pindah kategori di 1950
+  foto 4 dataset.
+- **Guarantee proses** (`CullingView` + `culler.cullDebug`): bobot progress
+  60/40 + label fase, cancel-parsial kembali ke select (tak ke review),
+  counter `thumbNull`/`featNull` di stats.
 - **White-bg**: highlight tepi gosong + tengah bersih = studio, bukan cacat
   (bebas penalti/reason/gate highlight). Bright-unclipped pakai kurva lembut.
 - **Determinisme dijamin**: hash dirakit searah urutan foto (bukan push dari callback
@@ -106,6 +116,18 @@ Picks/Maybe/Rejects → review grid (lazy, paginasi 60) → ekspor XMP / pindah 
 | DIGICAM | 231 JPG manusia kasual | 209/19/3 | 201/24/6 | 192/26/13 |
 | FIX KERAMIK | 74 JPG produk | 23/48/3 | 47/24/3 | 35/22/17 |
 | bulbah | 367 JPG burst acara (14 MB/foto) | — | — | 140/224/3 |
+| OSIS skvela | 1278 JPG event siang+panggung | 871/407/0 | 918/360/0 | 968/303/7 |
+
+(Angka OSIS via harness sharp full-res; aplikasi pakai thumbnail 480px q62 jadi
+bisa geser ±1. High OSIS: 1→7 rejects setelah rule darkReject; fast/balanced
+bit-identik sebelum/sesudah. DIGICAM/KERAMIK/bulbah high via harness identik
+sebelum/sesudah kecuali OSIS.)
+- Safety assertion: **nol foto tajam (fokus ≥70) di Rejects untuk vonis
+  blur/cacat-tunggal**. Pengecualian terdokumentasi (verifikasi visual):
+  vonis duplikat-lunak (bulbah DSCF8012/13/14) dan vonis exposure-hancur
+  (6 foto OSIS, fokus 83–96 tapi exposure 5–8, diputuskan user = Rejects).
+- Final harness 2026-09-16 (high): OSIS 968/303/7, DIGICAM 193/29/9,
+  KERAMIK 38/15/21 (1 pindah tilt, visual OK: DSCF3786), bulbah 139/225/3.
 
 (Format: Picks/Maybe/Rejects. Maybe DIGICAM 8–11% = dalam target 10–25% user.)
 - Safety assertion: **nol foto tajam (fokus ≥70) di Rejects** di semua mode/folder.
@@ -125,8 +147,8 @@ Picks/Maybe/Rejects → review grid (lazy, paginasi 60) → ekspor XMP / pindah 
   `FolderPicker`, `SensitivitySelector` (estimasi waktu live), `CullingView`
   (progress/cancel/error), `PhotoGrid` (tab, paginasi, hover-koreksi, dimensi
   dari thumbnail ter-decode), `LazyThumb` (IntersectionObserver), `Lightbox`
-  (full-res on-demand, keyboard ←/→/1/2/3/Esc), `MoveModal` (Picks + opsional Maybe),
-  `Fieldset`, footer status bar live. Logo: `public/logo.png`, `build/icon.ico`
+  (full-res on-demand, tombol tengah + badge status, shortcut custom default
+    Q/W/E via gear header, Esc/←/→), `MoveModal` (Picks + opsional Maybe),  `Fieldset`, footer status bar live. Logo: `public/logo.png`, `build/icon.ico`
   (ICO multi-ukuran valid via png-to-ico; JANGAN rename PNG jadi .ico — rcedit gagal).
 
 ## 8. Build, Pack & Gotcha (baca sebelum pack!)
@@ -166,12 +188,31 @@ Picks/Maybe/Rejects → review grid (lazy, paginasi 60) → ekspor XMP / pindah 
 - Konten non-manusia = deteksi OTOMATIS (tanpa toggle manual).
 - Waktu proses boleh lama asal maksimal (tapi tetap jaga STD verifikasi di atas).
 - Bahasa: UI Indonesia default; dokumen repo Inggris; MEMORY/ARCHITECTURE Indonesia.
+- **2026-09-16 (OSIS): foto panggung gelap exposure ≤15 (subjek remang) = Rejects
+  di mode High** (alasan `Terlalu gelap (exposure hancur)`); foto crowd gelap
+  tapi konten hidup (e.g. expo 39, lum 40) tetap boleh Picks — exposure mentah
+  bukan vonis buta. Perubahan HANYA mode high; fast/balanced bit-identik.
+- **2026-09-16 (PLAN selesai): horizon miring = penalti −6 + alasan (semua mode,
+  tanpa hard-reject). DITAHAN beralasan: deteksi layar (37 FP di OSIS, butuh
+  dataset positif + FFT), noise-vs-blur (metrik ikut tekstur, 96% FP),
+  ONNX ultraface (native ±100 MB + electron-rebuild, untung kecil:
+  unknown 9/1278 — kirim bila unknown-rate tinggi di data user).**
+- **2026-09-16 (Fase 5 spike): ultraface RFB-320 valid (MIT, 1.27MB, CPU
+  6–12ms). Integrasi DITAHAN: node butuh rebuild ABI; web v1.30 cuma wasm
+  threaded (butuh SAB, renderer file:// tak punya). Pemicu: migrasi protocol
+  app:// atau wasm single-thread. Dep percobaan dibersihkan.**
+- **2026-09-16 (Fase 5 kirim, user setuju migrasi): renderer `app://` +
+  COOP/COEP (`crossOriginIsolated=true` terbukti di exe), ort wasm + model
+  jalan di exe pack (session load OK). Cap wajah-dominan-unknown (area>0.12,
+  High). Sampingan: pack 10GB→385MB (ignore foto+src); final 402MB.**
 
 ## 11. Roadmap Terbuka
 
-ONNX ultraface (DirectML) · decode pratinjau RAW penuh · SQLite histori koreksi ·
-auto-update · installer NSIS + code signing · deteksi layar · segmentasi subjek ·
-deteksi tilt · kebijakan duplikat-burst→Rejects (DITAHAN — butuh persetujuan user
+ONNX ultraface (DirectML, DITAHAN — lihat §10) · decode pratinjau RAW penuh ·
+SQLite histori koreksi · auto-update · installer NSIS + code signing ·
+deteksi layar (DITAHAN — butuh dataset positif + FFT) ·
+segmentasi subjek · deteksi tilt (KIRIM 2026-09-16) ·
+kebijakan duplikat-burst→Rejects (DITAHAN — butuh persetujuan user
 karena agresif) · eye-crop-zoom untuk wajah kecil (butuh lokalisasi wajah dulu).
 
 ## 12. PROTOKOL AUTO-UPDATE (untuk sesi berikutnya)

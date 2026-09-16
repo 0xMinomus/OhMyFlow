@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Header } from '@/components/Header'
 import { FolderPicker } from '@/components/FolderPicker'
 import { Fieldset } from '@/components/Fieldset'
@@ -5,15 +6,29 @@ import { SensitivitySelector } from '@/components/SensitivitySelector'
 import { CullingView } from '@/components/CullingView'
 import { PhotoGrid } from '@/components/PhotoGrid'
 import { SENSITIVITY_MODES } from '@/components/SensitivitySelector'
-import { useStore } from '@/store/useAppStore'
+import { useStore, appStore } from '@/store/useAppStore'
 
 export default function App() {
+  useEffect(() => {
+    const sync = () => {
+      try {
+        const pads = navigator.getGamepads ? navigator.getGamepads() : []
+        appStore.setPadConnected([...pads].some(p => p && p.connected))
+      } catch {}
+    }
+    sync()
+    window.addEventListener('gamepadconnected', sync)
+    window.addEventListener('gamepaddisconnected', sync)
+    const iv = setInterval(sync, 2000)
+    return () => { window.removeEventListener('gamepadconnected', sync); window.removeEventListener('gamepaddisconnected', sync); clearInterval(iv) }
+  }, [])
   const step = useStore(s=> s.step)
   const lang = useStore(s=> s.language)
   const stats = useStore(s=> s.stats)
   const photos = useStore(s=> s.photos)
   const mode = useStore(s=> s.sensitivity)
   const progress = useStore(s=> s.cullingProgress)
+  const padOn = useStore(s=> s.padConnected)
   const t = (id: string, en: string) => (lang==='id' ? id : en)
 
   const hasPhotos = photos.length > 0
@@ -52,6 +67,8 @@ export default function App() {
           <span className="shrink-0 hidden sm:flex items-center gap-1.5">
             OhMyFlow v1.0
             <span className="text-zinc-600">|</span>
+            {padOn && (<span className="text-emerald-400 font-bold">[PAD]</span>)}
+            {padOn && (<span className="text-zinc-600">|</span>)}
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
             {t('100% Lokal', '100% Local')}
           </span>

@@ -37,7 +37,8 @@ internet, tidak perlu kartu grafis khusus (GPU hanya mempercepat bila ada).
    perlu lirik sekilas), **Rejects** (gagal). Setiap foto disertai alasan
    berbahasa Indonesia/Inggris, misalnya *"Blur / tidak fokus"* atau
    *"Duplikat / burst"*. Koreksi cukup sekali klik, atau lewat pratinjau besar
-   (lightbox) dengan keyboard.
+   (lightbox) dengan keyboard yang bisa dikustom (default Q/W/E) atau
+   controller (mis. PS: L1/R1 pindah, Kotak/Segitiga/Bulat nilai).
 5. **Ekspor** — tulis hasilnya sebagai file XMP agar langsung terbaca di Adobe
    Lightroom, dan/atau pindahkan file Picks ke folder baru.
 
@@ -46,9 +47,9 @@ internet, tidak perlu kartu grafis khusus (GPU hanya mempercepat bila ada).
 | Aspek | Contoh vonis |
 |---|---|
 | Ketajaman & fokus | Blur, tidak fokus, agak lunak — termasuk versi yang lebih lunak dari kembarannya di burst yang sama |
-| Mata | Mata tertutup (hanya bila terbukti kuat, bukan tebakan) |
-| Exposure | Terlalu gelap, highlight pecah, kontras kasar malam hari |
-| Komposisi | Subjek menumpuk di sudut, terlalu kecil, terpotong tepi |
+| Mata | Mata tertutup (hanya bila terbukti kuat, bukan tebakan). Wajah besar yang matanya tak terbaca (mode High) ditahan untuk lirik manual |
+| Exposure | Terlalu gelap, highlight pecah, kontras kasar malam hari — termasuk panggung gelap yang exposure-nya hancur (mode High) |
+| Komposisi | Subjek menumpuk di sudut, terlalu kecil, terpotong tepi, horizon miring |
 | Duplikat | Frame nyaris identik dari burst (yang terbaik dipertahankan) |
 | Kebersihan frame | Frame kosong/hitam total |
 

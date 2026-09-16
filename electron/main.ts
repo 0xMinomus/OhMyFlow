@@ -1,10 +1,16 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
-import { join } from 'path'
+import { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } from 'electron'
+import { join, normalize } from 'path'
 import { existsSync, readdirSync, statSync, writeFileSync, readFileSync, unlinkSync, mkdirSync, renameSync, copyFileSync } from 'fs'
 import { createHash } from 'crypto'
 import { extname, basename, dirname } from 'path'
 
 let mainWindow: BrowserWindow | null = null
+
+// Skema privileged untuk renderer (standard + fetchable). Wajib sebelum ready.
+protocol.registerSchemesAsPrivileged([{
+  scheme: 'app',
+  privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
+}])
 
 const SUPPORTED_EXTS = new Set([
   '.jpg', '.jpeg', '.png', '.tiff', '.tif', '.webp', '.bmp',
@@ -38,7 +44,7 @@ function createWindow() {
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
   } else {
-    mainWindow.loadFile(join(__dirname, '../dist/index.html'))
+    mainWindow.loadURL('app://app/index.html')
   }
 
   // devtools in dev
@@ -47,7 +53,31 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  // Renderer via `app://` (bukan file://) agar bisa pasang COOP/COEP →
+  // crossOriginIsolated = true → SharedArrayBuffer untuk ONNX wasm.
+  // Hanya layani GET di dalam dist/ (anti traversal). UI flow tak berubah.
+  protocol.handle('app', async (req) => {
+    try {
+      if (req.method !== 'GET') return new Response('method not allowed', { status: 405 })
+      const u = new URL(req.url)
+      let rel = decodeURIComponent(u.pathname)
+      if (rel === '/' || rel === '') rel = '/index.html'
+      const root = join(__dirname, '../dist')
+      const filePath = normalize(join(root, rel))
+      if (!filePath.startsWith(root)) return new Response('forbidden', { status: 403 })
+      if (!existsSync(filePath)) return new Response('not found', { status: 404 })
+      const res = await net.fetch('file:///' + filePath.replace(/\\/g, '/'))
+      const headers = new Headers(res.headers)
+      headers.set('Cross-Origin-Opener-Policy', 'same-origin')
+      headers.set('Cross-Origin-Embedder-Policy', 'credentialless')
+      return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
+    } catch (e: any) {
+      return new Response(String(e?.message || e), { status: 500 })
+    }
+  })
+  createWindow()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
@@ -189,6 +219,65 @@ async function makeThumbnail(sourcePath: string, cachePath: string): Promise<Buf
     return null
   }
 }
+
+// ---- Analysis image pipeline (v2, High saja): terpisah dari UI thumbnail ----
+// UI thumbnail kecil (480px q62) bagus untuk grid, tapi High 512 upscale tanpa
+// info tambah. Analysis image 1280px q85 + cache terpisah `userData/analysis`.
+function analysisCacheDir(): string {
+  const d = join(app.getPath('userData'), 'analysis')
+  try { mkdirSync(d, { recursive: true }) } catch {}
+  return d
+}
+
+async function makeAnalysisImage(sourcePath: string, cachePath: string, maxSide: number): Promise<Buffer | null> {
+  try {
+    const sharp = (await import('sharp')).default
+    const size = Math.max(320, Math.min(1600, Math.round(maxSide)))
+    const buf = await sharp(sourcePath, { failOnError: false })
+      .rotate()
+      .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 85, mozjpeg: false })
+      .toBuffer()
+    try { writeFileSync(cachePath, buf) } catch {}
+    return buf
+  } catch {
+    return null
+  }
+}
+
+ipcMain.handle('fs:getAnalysisBatch', async (_e, items: { filePath: string, previewPath?: string }[], maxSide?: number) => {
+  const size = Math.max(320, Math.min(1600, Math.round(maxSide || 1280)))
+  const sliced = (items || []).slice(0, 12)
+  const out: Record<string, { dataUrl: string | null, isRaw?: boolean, error?: string }> = {}
+  const queue = [...sliced]
+  async function worker() {
+    while (queue.length) {
+      const it = queue.shift()!
+      const src = it.previewPath || it.filePath
+      try {
+        const ext = extname(src).toLowerCase()
+        if (RAW_EXTS.has(ext) && !it.previewPath) { out[it.filePath] = { dataUrl: null, isRaw: true }; continue }
+        let stat: any
+        try { stat = statSync(src) } catch { out[it.filePath] = { dataUrl: null, error: 'not-found' }; continue }
+        const key = thumbKey(`${src}|a${size}`, stat.size, stat.mtimeMs)
+        const cachePath = join(analysisCacheDir(), key + '.jpg')
+        if (existsSync(cachePath)) {
+          try {
+            const cached = readFileSync(cachePath)
+            out[it.filePath] = { dataUrl: `data:image/jpeg;base64,${cached.toString('base64')}` }
+            continue
+          } catch {}
+        }
+        const buf = await makeAnalysisImage(src, cachePath, size)
+        out[it.filePath] = buf ? { dataUrl: `data:image/jpeg;base64,${buf.toString('base64')}` } : { dataUrl: null, error: 'decode-failed' }
+      } catch (err:any) {
+        out[it.filePath] = { dataUrl: null, error: String(err?.message || err) }
+      }
+    }
+  }
+  await Promise.all([worker(), worker(), worker(), worker()])
+  return out
+})
 
 ipcMain.handle('fs:getThumbnail', async (_e, filePath: string, previewPath?: string) => {
   try {

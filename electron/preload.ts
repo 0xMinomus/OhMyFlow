@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('ohmyflow', {
   readImageAsDataUrl: (filePath: string): Promise<any> => ipcRenderer.invoke('fs:readImageAsDataUrl', filePath),
   getThumbnail: (filePath: string, previewPath?: string): Promise<any> => ipcRenderer.invoke('fs:getThumbnail', filePath, previewPath),
   getThumbnailsBatch: (items: { filePath: string, previewPath?: string }[]): Promise<any> => ipcRenderer.invoke('fs:getThumbnailsBatch', items),
+  getAnalysisBatch: (items: { filePath: string, previewPath?: string }[], maxSide?: number): Promise<any> => ipcRenderer.invoke('fs:getAnalysisBatch', items, maxSide),
   clearThumbCache: (): Promise<any> => ipcRenderer.invoke('fs:clearThumbCache'),
   writeXmp: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeXmp', filePath, content),
   writeXmpsBulk: (items: any[]) => ipcRenderer.invoke('fs:writeXmpsBulk', items),
@@ -28,6 +29,7 @@ declare global {
       readImageAsDataUrl: (p: string) => Promise<{ dataUrl: string | null, isRaw: boolean, ext?: string, error?: string }>
       getThumbnail: (filePath: string, previewPath?: string) => Promise<{ dataUrl: string | null, isRaw?: boolean, cached?: boolean, ext?: string, error?: string }>
       getThumbnailsBatch: (items: { filePath: string, previewPath?: string }[]) => Promise<Record<string, { dataUrl: string | null, isRaw?: boolean, error?: string }>>
+      getAnalysisBatch: (items: { filePath: string, previewPath?: string }[], maxSide?: number) => Promise<Record<string, { dataUrl: string | null, isRaw?: boolean, error?: string }>>
       clearThumbCache: () => Promise<{ ok: boolean, cleared?: number, error?: string }>
       writeXmp: (p: string, c: string) => Promise<any>
       writeXmpsBulk: (items: any[]) => Promise<{ ok: number, total: number }>

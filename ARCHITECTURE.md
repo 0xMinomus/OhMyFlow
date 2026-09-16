@@ -1,7 +1,8 @@
 # ARCHITECTURE.md — Arsitektur OhMyFlow
 
 > Dokumen teknik terkini. Menjelaskan alur sistem, tech stack, proses culling,
-> dan model AI lokal secara mendalam. Status: sinkron dengan kode per 2026-09-16.
+> dan model AI lokal secara mendalam. Status: sinkron dengan kode per 2026-09-16
+> (rule darkReject high + dataset OSIS).
 > Konteks produk: `PRODUCT.md`. Memori sesi: `MEMORY.md`.
 
 ---
@@ -22,7 +23,8 @@ di foto asli sebelum dikirim.
 │ RENDERER (React)                                      │
 │ FolderPicker → SensitivitySelector → CullingView ──┐  │
 │   → AI single-decode (1× decode/foto):              │  │
-│     blur · aesthetic · composition · face · dHash   │  │
+│     blur · aesthetic · composition · face · tilt ·      │  │
+│     subject · motion · dHash                            │  │
 │   → skor komposit → Picks / Maybe / Rejects         │  │
 │   → PhotoGrid (lazy + paginasi) → Lightbox          │  │
 │   → Ekspor XMP / Pindah file ───────────────────────┘  │
@@ -37,6 +39,8 @@ ekspor**. State awal hanya menampilkan pilih folder; hasil muncul setelah cullin
 | Lapisan | Teknologi | Alasan |
 |---|---|---|
 | Desktop shell | Electron 30 | `.exe` Windows native (taskbar, dialog file, associate), WebView2/Chromium |
+| Renderer URL | `app://` custom protocol + COOP/COEP | `crossOriginIsolated` untuk ONNX wasm; anti-traversal hanya-dist |
+| ML | onnxruntime-web (devDep, bundle) + UltraFace RFB-320 (MIT, 1.27MB) | Face lokal fail-safe; High + unknown saja |
 | UI | React 18 + TypeScript 5 + Tailwind CSS 3 | Komponen + type-safety; utility styling |
 | Build | Vite 5 + vite-plugin-electron | Dev hot-reload; output `dist/` + `dist-electron/` |
 | Citra | sharp 0.33 (satu-satunya dependency runtime) | Decode + resize cepat (libvips), dipakai main process |
@@ -76,9 +80,34 @@ ekspor XMP. Penulisan hanya `.xmp` dan (eksplisit via dialog) pemindahan file.
    (`IntersectionObserver`, rootMargin 400px). Cache dua lapis: memori LRU
    (400 entri, dedup request berjalan) + cache disk. Hasil: folder 367 foto
    14 MB-an tetap ringan dibuka.
+   **v2 (High saja):** AI memakai analysis image terpisah (1280px q85,
+   cache `userData/analysis`, channel `fs:getAnalysisBatch`) — bukan thumbnail
+   grid. Fast/Balanced tetap thumbnail 480px q62.
 3. **Prefetch + analisis** — sebelum culling, thumbnail diambil batch; tiap foto
    di-decode **tepat sekali** (`decodeOnce`, cache ≤60 entri, TTL 30 detik,
-   clamp sisi 128–768px), lalu SEMUA modul membaca `ImageData` yang sama.
+   clamp sisi 128–768px), lalu SEMUA modul membaca `ImageData` yang sama
+   (blur, aesthetic, composition, face, tilt, dHash).
+   **v2 (High):** tambah `subject` (fokus zona wajah/tengah, tanpa detector baru)
+   + `motion` (imbalance sumbu + delta subjek-bg, diagnostik); eye-unknown
+   netral 72 (tanpa reward 78). Critical gate terdefinisi, ambang provisional.
+   **v2 Fase 3:** expo-cap (exposure<32, bukan objek/whiteBg = max Maybe,
+   High) + reason codes post-hoc (`reasons.ts`, UI tak berubah).
+   **v2 Fase 4:** ranking burst per cluster (High, flag `V2_BURST_RANK`) +
+   `BURST_REDUNDANT` Reject (margin≥12, diversity guard) — OSIS high
+   965/226/87, bulbah high 139/154/74; keeper selalu tersisa.
+   **v2 Fase 5:** ONNX UltraFace + cap wajah-dominan-unknown (High).
+   **v2 Fase 6:** Pass-2 eye ROI (`ml/eye-roi.ts`, crop box ONNX, High +
+   unknown + box kecil; renderer-only, harness bit-identik).
+   **Larangan vonis tanpa reason (user):** reasons kosong → picks dapat
+   ringkasan eviden (Fokus/Eksposur/Komposisi baik, Mata terbuka), maybe dapat
+   `Belum meyakinkan (skor)`, rejects tanpa bukti TURUN ke Maybe. Nol kosong
+   di 1950+ foto; kategori tak berubah.
+   **Fix foto gelap lolos Picks (user report IMG_6168-70/6191):** objMode wajib
+   lum≥120 (keramik 176-241; foto remang p50-rendah tak menyamar produk) +
+   cap remang-lunak High (no-face, lum<70, f<75 = Maybe) + cap background-tajam
+   (subj−focus≥5, lum<90 = Maybe) + hardBlur borderline-terang (±2 poin,
+   expo≥90, lum≥100 = Maybe, mis. IMG_6175 f59). 7 pindah visual OK;
+   DIGICAM/KERAMIK/bulbah + fast/balanced identik; deterministik.
 4. **Skoring & vonis** — `culler.ts` (§5).
 5. **Review** — grid terfilter (Semua/Picks/Maybe/Rejects), paginasi 60/halaman,
    koreksi hover, alasan per foto (ID/EN), lightbox resolusi penuh (keyboard
@@ -143,6 +172,13 @@ mode High menolak anggota yang jelas lebih lunak dari kembaran tertajamnya
   tidak divonis.
 - `skinRatio` diekspos untuk diagnostik.
 
+### 5.6b `tilt.ts` — horizon miring
+Belah frame kiri/kanan, bandingkan baris energi-tepi-horizontal terkuat;
+selisih >0.06 + energi horizontal dominan + puncak nyata = miring.
+Efek: penalti skor −6 + alasan, TANPA hard-reject. Terverifikasi sintetis
+(miring=ya, datar=tidak) + true-positive visual; 25 flag di 1950 foto,
+1 pindah kategori.
+
 ### 5.7 `culler.ts` — preset, skor, vonis
 
 | Param | Fast | Balanced | High |
@@ -153,10 +189,13 @@ mode High menolak anggota yang jelas lebih lunak dari kembaran tertajamnya
 | picksAt / rejectBelow | 75 / 40 | 70 / 45 | 72 / 48 |
 | hardBlurBelow / picksFocusMin | 45 / 60 | 55 / 60 | 60 / 60 |
 | blownRejectAt / confRejectFloor | 18 / .45 | 14 / .32 | 12 / .28 |
+| darkRejectAt (exposure hancur → rejects) | 0 (mati) | 0 (mati) | 15 |
 | eyeThreshold / exposureHR / compHR | .70 / ✕ / ✕ | .60 / ✓ / ✕ | .50 / ✓ / ✓ |
 
 Urutan vonis: mata-tertutup → accidental → hardBlur (kecuali objek-mulus /
-proteksi-mata) → gelap-total → blown-ekstrem → blownMid → komposisi (high) →
+proteksi-mata) → gelap-total → **darkReject (high saja: `darkRejectAt>0` dan
+exposure ≤15 dan meanLum <35 dan clippedHi <5 dan bukan whiteBg; alasan
+`Terlalu gelap (exposure hancur)`)** → blown-ekstrem → blownMid → komposisi (high) →
 duplikat → picks (+gate fokus/kliping/komposisi; objek −10) → rejectBelow →
 jaring pengaman. Aturan pendukung: proteksi mata-terbuka-jelas (pupil teresolusi
 + fokus ≥50, terbukti menyelamatkan selfie bagus tanpa menyelamatkan jari di
@@ -197,6 +236,13 @@ DIHAPUS setiap selesai (folder kerja bersih).
 | DIGICAM | 231 JPG manusia kasual | 209/19/3 | 201/24/6 | 192/26/13 |
 | FIX KERAMIK | 74 JPG produk | 23/48/3 | 47/24/3 | 35/22/17 |
 | bulbah | 367 JPG burst acara | — | — | 140/224/3 |
+| OSIS skvela | 1278 JPG event siang+panggung | 871/407/0 | 918/360/0 | 968/303/7 |
+
+(Format Picks/Maybe/Rejects. Angka OSIS via harness sharp full-res; aplikasi
+memakai thumbnail 480px q62 sehingga bisa geser ±1. High OSIS 1→7 rejects
+setelah darkReject; fast/balanced bit-identik. Dataset lama high identik
+sebelum/sesudah via harness. Setiap vonis baru lolos uji determinisme
+byte-identik dua run 1278 foto.)
 
 (Format Picks/Maybe/Rejects. Maybe DIGICAM 8–11% = dalam target 10–25%.)
 Kasus landmark yang diselesaikan via data: mata-hantu di keramik (14→0),

@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import { useStore, appStore } from '@/store/useAppStore'
 import { cullPhotos } from '@/lib/ai-engine/culler'
-import { prefetchThumbsBatch, getMemThumb } from '@/lib/thumbCache'
+import { ANALYSIS_IMAGE_SIZE, V2_ANALYSIS_IMAGE } from '@/lib/ai-engine/pipeline'
+import { prefetchThumbsBatch, getMemThumb, prefetchAnalysisBatch } from '@/lib/thumbCache'
 
 function InfoIcon() {
   return (
@@ -27,11 +28,15 @@ export function CullingView() {
     cancelRef.current = false
     setError(null)
     appStore.setStep('culling')
-    appStore.setProgress({ done:0, total: photos.length })
+    appStore.setProgress({ done:0, total: photos.length, label: t('Siapkan thumbnail', 'Prepare thumbnails') })
     const t0 = performance.now()
 
     try {
       const withThumbs = photos.map((p) => ({ ...p }))
+      // v2 analysis image HANYA High (verdict mode lain bit-identik).
+      const useAnalysis = V2_ANALYSIS_IMAGE && mode === 'high'
+      // Bobot bar: thumb 30% + analysis 30% (High) / thumb 60% (lainnya) + AI sisa.
+      const thumbW = useAnalysis ? 0.3 : 0.6
       for (let i = 0; i < withThumbs.length; i += 24) {
         if (cancelRef.current) break
         const chunk = withThumbs.slice(i, i + 24)
@@ -46,8 +51,26 @@ export function CullingView() {
           it.thumbUrl = u
         }
         const loaded = Math.min(withThumbs.length, i + 24)
-        appStore.setProgress({ done: Math.round(loaded * 0.15), total: photos.length })
+        // Prefetch (sharp+IPC full-res) = kerja berat → bobot jujur (lihat thumbW).
+        appStore.setProgress({ done: Math.round(loaded * thumbW), total: photos.length, label: t('Siapkan thumbnail', 'Prepare thumbnails') })
         await new Promise(r => setTimeout(r, 0))
+      }
+      if (useAnalysis) {
+        const aSize = ANALYSIS_IMAGE_SIZE[mode] ?? 1280
+        for (let i = 0; i < withThumbs.length; i += 24) {
+          if (cancelRef.current) break
+          const chunk = withThumbs.slice(i, i + 24)
+          let amap: Map<string, string | null>
+          try {
+            amap = await prefetchAnalysisBatch(chunk, aSize)
+          } catch {
+            amap = new Map()
+          }
+          for (const it of chunk) it.analysisUrl = amap.get(it.filePath) ?? null
+          const loaded = Math.min(withThumbs.length, i + 24)
+          appStore.setProgress({ done: Math.round(withThumbs.length * 0.3 + loaded * 0.3), total: photos.length, label: t('Siapkan analisis', 'Prepare analysis') })
+          await new Promise(r => setTimeout(r, 0))
+        }
       }
       if (cancelRef.current) {
         appStore.setProgress(null)
@@ -55,22 +78,30 @@ export function CullingView() {
         return
       }
 
+      const baseW = useAnalysis ? 0.6 : 0.6
       const culled = await cullPhotos(withThumbs, {
         mode,
         shouldCancel: () => cancelRef.current,
         onProgress: (done,total)=> {
-          const mapped = Math.round(total * 0.15 + done * 0.85)
-          appStore.setProgress({ done: Math.min(total, mapped), total })
+          const mapped = Math.round(total * baseW + done * (1 - baseW))
+          appStore.setProgress({ done: Math.min(total, mapped), total, label: t('Analisis', 'Analyzing') })
         }
       })
+      // Batal di tengah = hasil parsial (ekor tanpa kategori) → JANGAN ke review.
+      if (cancelRef.current) {
+        appStore.setProgress(null)
+        appStore.setStep('select')
+        return
+      }
 
       const dt = performance.now()-t0
       const picks = culled.filter(p=>p.category==='picks').length
       const maybe = culled.filter(p=>p.category==='maybe').length
       const rejects = culled.filter(p=>p.category==='rejects').length
+      const debug = (culled as any).cullDebug ?? {}
       const throughput = Math.round((culled.length / Math.max(1,(dt/60000))))
       appStore.setPhotos(culled)
-      appStore.setStats({ total: culled.length, picks, maybe, rejects, durationMs: dt, throughputPerMin: throughput })
+      appStore.setStats({ total: culled.length, picks, maybe, rejects, durationMs: dt, throughputPerMin: throughput, thumbNull: debug.noSrc ?? 0, featNull: debug.featNull ?? 0 })
       appStore.setProgress(null)
       appStore.setStep('review')
       appStore.setCategory('all')
@@ -89,7 +120,7 @@ export function CullingView() {
         <div className="flex items-center gap-3">
           <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-flow-500 border-t-white" aria-hidden="true" />
           <span className="font-mono text-[13px] font-bold text-white tabular-nums">
-            {t('Memilah', 'Culling')} {progress.done}/{progress.total}
+            {progress.label ? `${progress.label} ` : `${t('Memilah', 'Culling')} `}{progress.done}/{progress.total}
           </span>
           <span className="ml-auto font-mono text-[11px] tabular-nums text-zinc-500">{pct}%</span>
         </div>

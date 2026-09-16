@@ -87,6 +87,44 @@ export function clearMemThumbs() {
   inflight.clear()
 }
 
+// ---- Analysis image cache (v2, High saja): memori kecil + disk main process ----
+const memAnalysis = new Map<string, string | null>()
+const MAX_ANALYSIS_MEM = 60
+
+function memASet(key: string, val: string | null) {
+  if (memAnalysis.has(key)) memAnalysis.delete(key)
+  memAnalysis.set(key, val)
+  if (memAnalysis.size > MAX_ANALYSIS_MEM) {
+    const first = memAnalysis.keys().next().value
+    if (first) memAnalysis.delete(first)
+  }
+}
+
+/** Prefetch analysis image (1280px q85) untuk AI — High saja. Bounded, dedup per batch. */
+export async function prefetchAnalysisBatch(items: PhotoItem[], maxSide: number): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>()
+  const missing = items.filter((i) => !memAnalysis.has(i.filePath) && !(i as any).analysisUrl)
+  for (const i of items) {
+    if (memAnalysis.has(i.filePath)) out.set(i.filePath, memAnalysis.get(i.filePath)!)
+    else if ((i as any).analysisUrl) { memASet(i.filePath, (i as any).analysisUrl); out.set(i.filePath, (i as any).analysisUrl) }
+  }
+  for (let k = 0; k < missing.length; k += 12) {
+    const chunk = missing.slice(k, k + 12)
+    try {
+      const res = await window.ohmyflow.getAnalysisBatch(
+        chunk.map((c) => ({ filePath: c.filePath, previewPath: c.previewPath })), maxSide)
+      for (const c of chunk) {
+        const url = res?.[c.filePath]?.dataUrl ?? null
+        memASet(c.filePath, url)
+        out.set(c.filePath, url)
+      }
+    } catch {
+      for (const c of chunk) { memASet(c.filePath, null); out.set(c.filePath, null) }
+    }
+  }
+  return out
+}
+
 /** Buang cache milik file yang sudah dipindah/dihapus agar tidak tampil basi. */
 export function dropMemThumbs(filePaths: string[]) {
   for (const k of filePaths) {

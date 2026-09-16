@@ -16,6 +16,7 @@ export interface PhotoItem {
   baseName: string
   dataUrl?: string | null // legacy full-res (jangan diisi untuk folder besar)
   thumbUrl?: string | null // thumbnail ringan 480px dari main process (yang dipakai UI + AI)
+  analysisUrl?: string | null // analysis image 1280px q85 (v2, High saja; AI pakai ini bila ada)
   thumbLoading?: boolean
   // AI results
   score?: number // 0-100
@@ -39,6 +40,8 @@ export interface CullStats {
   rejects: number
   durationMs: number
   throughputPerMin: number
+  thumbNull?: number // prefetch gagal (masuk Maybe tanpa AI)
+  featNull?: number // decode/analisis gagal (masuk Maybe tanpa AI)
 }
 
 export interface AppSettings {

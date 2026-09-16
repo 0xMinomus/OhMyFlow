@@ -1,7 +1,62 @@
-import { useStore, appStore } from '@/store/useAppStore'
+import { useEffect, useRef, useState } from 'react'
+import { useStore, appStore, DEFAULT_KEYBINDS } from '@/store/useAppStore'
+import { padButtonName, waitPadButton, DEFAULT_PADBINDS, type PadAction } from '@/lib/gamepad'
+
+function GearIcon() {
+  return (
+    <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  )
+}
 
 export function Header() {
   const lang = useStore(s=>s.language)
+  const binds = useStore(s=>s.keybinds)
+  const padbinds = useStore(s=>s.padbinds)
+  const padOn = useStore(s=>s.padConnected)
+  const [open, setOpen] = useState(false)
+  const [capture, setCapture] = useState<'picks' | 'maybe' | 'rejects' | null>(null)
+  const [padCapture, setPadCapture] = useState<PadAction | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const t = (id: string, en: string) => (lang==='id' ? id : en)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) { setOpen(false); setCapture(null) }
+    }
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') { setOpen(false); setCapture(null) } }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onEsc)
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onEsc) }
+  }, [open ])
+
+  useEffect(() => {
+    if (!padCapture) return
+    let dead = false
+    waitPadButton(10000).then(idx => {
+      if (dead) return
+      if (idx !== null) appStore.setPadbind(padCapture, idx)
+      setPadCapture(null)
+    })
+    return () => { dead = true }
+  }, [padCapture])
+
+  useEffect(() => {
+    if (!capture) return
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const reserved = ['ESCAPE', 'ARROWLEFT', 'ARROWRIGHT', 'TAB', ' ']
+      if (reserved.includes(e.key.toUpperCase())) { setCapture(null); return }
+      appStore.setKeybind(capture, e.key.length === 1 ? e.key : e.key)
+      setCapture(null)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [capture])
   return (
     <div className="h-16 flex items-center justify-between px-4 bg-flow-900 border-b border-flow-600 select-none shrink-0" style={{ WebkitAppRegion: 'drag' } as any}>
       <div className="flex items-center gap-2.5 min-w-0">
@@ -22,6 +77,86 @@ export function Header() {
         </div>
       </div>
       <div className="flex items-center gap-1 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
+        <div className="relative mr-1" ref={panelRef}>
+          <button
+            onClick={()=> { setOpen(o=>!o); setCapture(null) }}
+            aria-label={t('Pengaturan', 'Settings')}
+            aria-expanded={open}
+            className="flex items-center justify-center rounded-sm border border-flow-600 px-2 py-1.5 text-zinc-400 transition hover:border-zinc-500 hover:text-white"
+          >
+            <GearIcon />
+          </button>
+          {open && (
+            <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded border border-flow-600 bg-flow-800 p-3 shadow-xl">
+              <div className="mb-2 font-mono text-[11px] font-bold tracking-widest text-zinc-300">
+                {t('[ KEYBIND ]', '[ KEYBINDS ]')}
+              </div>
+              {(['picks','maybe','rejects'] as const).map(act => (
+                <div key={act} className="mb-1.5 flex items-center justify-between gap-2">
+                  <span className="font-mono text-[11px] text-zinc-400">
+                    {act === 'picks' ? t('Picks', 'Picks') : act === 'maybe' ? t('Maybe', 'Maybe') : t('Reject', 'Reject')}
+                  </span>
+                  <button
+                    onClick={()=> setCapture(act)}
+                    className={`min-w-[3rem] rounded-sm border px-2 py-1 text-center font-mono text-[11px] font-bold transition ${capture === act ? 'border-emerald-400 text-emerald-300' : 'border-flow-600 text-white hover:border-zinc-400'}`}
+                  >
+                    {capture === act ? '…' : binds[act]}
+                  </button>
+                </div>
+              ))}
+              {capture && (
+                <div className="mb-1.5 font-mono text-[10px] text-emerald-300">
+                  {t('Tekan tombol baru… (Esc batal)', 'Press a new key… (Esc cancels)')}
+                </div>
+              )}
+              <button
+                onClick={()=> { appStore.resetKeybinds(); setCapture(null) }}
+                className="mt-1 w-full rounded-sm border border-flow-600 px-2 py-1 font-mono text-[10px] font-bold text-zinc-400 transition hover:border-zinc-400 hover:text-white"
+              >
+                {t(`[ Reset → ${DEFAULT_KEYBINDS.picks}/${DEFAULT_KEYBINDS.maybe}/${DEFAULT_KEYBINDS.rejects} ]`, `[ Reset → ${DEFAULT_KEYBINDS.picks}/${DEFAULT_KEYBINDS.maybe}/${DEFAULT_KEYBINDS.rejects} ]`)}
+              </button>
+              <div className="mb-2 mt-3 border-t border-flow-700 pt-2 font-mono text-[11px] font-bold tracking-widest text-zinc-300">
+                {t('[ CONTROLLER ]', '[ CONTROLLER ]')}{' '}
+                <span className={padOn ? 'text-emerald-400' : 'text-zinc-600'}>
+                  {padOn ? t('konek', 'connected') : t('tak ada', 'none')}
+                </span>
+              </div>
+              {!padOn && (
+                <div className="mb-1.5 font-mono text-[10px] text-zinc-500">
+                  {t('Colok controller + tekan tombol apa saja.', 'Plug in a controller + press any button.')}
+                </div>
+              )}
+              {(['prev','next','picks','maybe','rejects'] as const).map(act => (
+                <div key={act} className="mb-1.5 flex items-center justify-between gap-2">
+                  <span className="font-mono text-[11px] text-zinc-400">
+                    {act === 'prev' ? t('← Sblm (L1)', '← Prev (L1)')
+                      : act === 'next' ? t('Brkt → (R1)', 'Next → (R1)')
+                      : act === 'picks' ? t('Picks (Kotak)', 'Picks (Square)')
+                      : act === 'maybe' ? t('Maybe (Segitiga)', 'Maybe (Triangle)')
+                      : t('Reject (Bulat)', 'Reject (Circle)')}
+                  </span>
+                  <button
+                    onClick={()=> setPadCapture(act)}
+                    className={`min-w-[4.5rem] rounded-sm border px-2 py-1 text-center font-mono text-[11px] font-bold transition ${padCapture === act ? 'border-emerald-400 text-emerald-300' : 'border-flow-600 text-white hover:border-zinc-400'}`}
+                  >
+                    {padCapture === act ? '…' : padButtonName(padbinds[act])}
+                  </button>
+                </div>
+              ))}
+              {padCapture && (
+                <div className="mb-1.5 font-mono text-[10px] text-emerald-300">
+                  {t('Tekan tombol controller… (10 dtk)', 'Press controller button… (10s)')}
+                </div>
+              )}
+              <button
+                onClick={()=> { appStore.resetPadbinds(); setPadCapture(null) }}
+                className="mt-1 w-full rounded-sm border border-flow-600 px-2 py-1 font-mono text-[10px] font-bold text-zinc-400 transition hover:border-zinc-400 hover:text-white"
+              >
+                {t(`[ Reset → ${padButtonName(DEFAULT_PADBINDS.prev)}/${padButtonName(DEFAULT_PADBINDS.next)}/${padButtonName(DEFAULT_PADBINDS.picks)}/${padButtonName(DEFAULT_PADBINDS.maybe)}/${padButtonName(DEFAULT_PADBINDS.rejects)} ]`, `[ Reset → ${padButtonName(DEFAULT_PADBINDS.prev)}/${padButtonName(DEFAULT_PADBINDS.next)}/${padButtonName(DEFAULT_PADBINDS.picks)}/${padButtonName(DEFAULT_PADBINDS.maybe)}/${padButtonName(DEFAULT_PADBINDS.rejects)} ]`)}
+              </button>
+            </div>
+          )}
+        </div>
         <button
           onClick={()=> appStore.setLanguage(lang==='id'?'en':'id')}
           aria-label={lang==='id' ? 'Switch to English' : 'Ganti ke Bahasa Indonesia'}

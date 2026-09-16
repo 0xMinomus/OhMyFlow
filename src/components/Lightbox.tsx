@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useStore, appStore } from '@/store/useAppStore'
 import { getMemThumb } from '@/lib/thumbCache'
+import { createPadPoller, firstPad } from '@/lib/gamepad'
 
 function XIcon() {
   return (
@@ -25,6 +26,8 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
   onClose: () => void
 }) {
   const photos = useStore(s=>s.photos)
+  const binds = useStore(s=>s.keybinds)
+  const padOn = useStore(s=>s.padConnected)
   const [curId, setCurId] = useState(initialId)
   const [full, setFull] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -35,6 +38,49 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
   const idx = navIds.indexOf(curId)
   const hasPrev = idx > 0
   const hasNext = idx >= 0 && idx < navIds.length - 1
+
+  const pollRef = useRef(createPadPoller(() => appStore.padbinds))
+  const navIdsRef = useRef<string[]>([])
+  const curIdRef = useRef(curId)
+  navIdsRef.current = navIds
+  curIdRef.current = curId
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+      else if (e.key === 'ArrowLeft' && hasPrev) setCurId(navIds[idx - 1])
+      else if (e.key === 'ArrowRight' && hasNext) setCurId(navIds[idx + 1])
+      else if (!p) return
+      else {
+        const k = e.key.toUpperCase()
+        if (k === binds.picks) appStore.updatePhotoCategory(p.id, 'picks')
+        else if (k === binds.maybe) appStore.updatePhotoCategory(p.id, 'maybe')
+        else if (k === binds.rejects) appStore.updatePhotoCategory(p.id, 'rejects')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  useEffect(() => {
+    let raf = 0
+    let alive = true
+    const loop = () => {
+      if (!alive) return
+      const act = pollRef.current()
+      if (act === 'prev' || act === 'next') {
+        const ids = navIdsRef.current
+        const i = ids.indexOf(curIdRef.current)
+        const j = act === 'prev' ? i - 1 : i + 1
+        if (j >= 0 && j < ids.length) setCurId(ids[j])
+      } else if (act && curIdRef.current) {
+        appStore.updatePhotoCategory(curIdRef.current, act)
+      }
+      raf = requestAnimationFrame(loop)
+    }
+    raf = requestAnimationFrame(loop)
+    return () => { alive = false; cancelAnimationFrame(raf) }
+  }, [])
 
   useEffect(() => { setCurId(initialId) }, [initialId])
   useEffect(() => { if (!p) onClose() }, [p, onClose])
@@ -55,29 +101,32 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
     return () => { dead = true }
   }, [p?.filePath, p?.previewPath, p?.isRaw]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-      else if (e.key === 'ArrowLeft' && hasPrev) setCurId(navIds[idx - 1])
-      else if (e.key === 'ArrowRight' && hasNext) setCurId(navIds[idx + 1])
-      else if (e.key === '1' && p) appStore.updatePhotoCategory(p.id, 'picks')
-      else if (e.key === '2' && p) appStore.updatePhotoCategory(p.id, 'maybe')
-      else if (e.key === '3' && p) appStore.updatePhotoCategory(p.id, 'rejects')
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  })
-
   if (!p) return null
   const reasons = (lang==='id' ? p.reasons : p.reasonsEn) ?? []
   const thumb = p.thumbUrl ?? getMemThumb(p.filePath) ?? undefined
   const verdict = p.category === 'picks' ? 'PICKS' : p.category === 'maybe' ? 'MAYBE' : 'REJECTS'
+  const badgeCls = p.category === 'picks'
+    ? 'border-emerald-400 bg-emerald-400 text-black'
+    : p.category === 'maybe'
+      ? 'border-amber-300 bg-amber-300 text-black'
+      : 'border-red-400 bg-red-400 text-black'
+  const btnBase = 'rounded-sm px-4 py-1.5 font-mono text-[11px] font-bold transition border '
+  const btnActive = 'ring-2 ring-white ring-offset-1 ring-offset-black '
+  const btnCls = (cat: 'picks' | 'maybe' | 'rejects', color: string) =>
+    btnBase + color + (p.category === cat ? btnActive : 'opacity-70 hover:opacity-100')
+  const isCur = (cat: 'picks' | 'maybe' | 'rejects') => p.category === cat
+  const disCls = 'disabled:cursor-not-allowed disabled:opacity-40 '
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black/95" role="dialog" aria-modal="true" aria-label={p.fileName}>
       <div className="flex items-center gap-3 border-b border-flow-700 px-4 py-2.5" onClick={(e)=> e.stopPropagation()}>
         <div className="min-w-0 flex-1">
-          <div className="truncate font-mono text-[13px] font-bold text-white">{p.fileName}</div>
+          <div className="truncate font-mono text-[13px] font-bold text-white">
+            {p.fileName}{' '}
+            <span className={`ml-1 inline-block rounded-sm border px-1.5 py-px font-mono text-[10px] font-bold ${badgeCls}`}>
+              [ {verdict} ]
+            </span>
+          </div>
           <div className="mt-0.5 truncate font-mono text-[11px] text-zinc-500">
             {verdict} · <span className="tabular-nums">{p.score ?? 0}</span>
             {reasons.length > 0 && ' · ' + reasons.slice(0, 2).join(' · ')}
@@ -145,14 +194,14 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-2 flex-wrap border-t border-flow-700 px-4 py-2.5" onClick={(e)=> e.stopPropagation()}>
-        <span className="font-mono text-[11px] tabular-nums text-zinc-500">{idx + 1} / {navIds.length}</span>
+      <div className="flex items-center justify-center gap-2 flex-wrap border-t border-flow-700 px-4 py-2.5" onClick={(e)=> e.stopPropagation()}>
+        <span className="absolute left-4 font-mono text-[11px] tabular-nums text-zinc-500">{idx + 1} / {navIds.length}</span>
         <div className="flex gap-1.5">
-          <button onClick={()=> appStore.updatePhotoCategory(p.id, 'picks')} className="rounded-sm bg-emerald-400 px-4 py-1.5 font-mono text-[11px] font-bold text-black">[ Picks ]</button>
-          <button onClick={()=> appStore.updatePhotoCategory(p.id, 'maybe')} className="rounded-sm bg-amber-300 px-4 py-1.5 font-mono text-[11px] font-bold text-black">[ Maybe ]</button>
-          <button onClick={()=> appStore.updatePhotoCategory(p.id, 'rejects')} className="rounded-sm bg-red-400 px-4 py-1.5 font-mono text-[11px] font-bold text-black">[ Reject ]</button>
+          <button disabled={isCur('picks')} aria-disabled={isCur('picks')} onClick={()=> appStore.updatePhotoCategory(p.id, 'picks')} title={isCur('picks') ? t('Sudah Picks', 'Already Picks') : t('Tandai Picks', 'Mark Picks')} className={disCls + btnCls('picks', 'border-emerald-400 bg-emerald-400 text-black')}>[ Picks · {binds.picks} ]</button>
+          <button disabled={isCur('maybe')} aria-disabled={isCur('maybe')} onClick={()=> appStore.updatePhotoCategory(p.id, 'maybe')} title={isCur('maybe') ? t('Sudah Maybe', 'Already Maybe') : t('Tandai Maybe', 'Mark Maybe')} className={disCls + btnCls('maybe', 'border-amber-300 bg-amber-300 text-black')}>[ Maybe · {binds.maybe} ]</button>
+          <button disabled={isCur('rejects')} aria-disabled={isCur('rejects')} onClick={()=> appStore.updatePhotoCategory(p.id, 'rejects')} title={isCur('rejects') ? t('Sudah Reject', 'Already Reject') : t('Tandai Reject', 'Mark Reject')} className={disCls + btnCls('rejects', 'border-red-400 bg-red-400 text-black')}>[ Reject · {binds.rejects} ]</button>
         </div>
-        <span className="hidden sm:inline font-mono text-[10px] text-zinc-600">{t('← → pindah · 1/2/3 nilai · Esc tutup', '← → navigate · 1/2/3 rate · Esc close')}</span>
+        <span className="absolute right-4 hidden sm:inline font-mono text-[10px] text-zinc-600">{t(`← → pindah · ${binds.picks}/${binds.maybe}/${binds.rejects} nilai · Esc tutup`, `← → navigate · ${binds.picks}/${binds.maybe}/${binds.rejects} rate · Esc close`)}{padOn ? t(' · [PAD]', ' · [PAD]') : ''}</span>
       </div>
     </div>
   )

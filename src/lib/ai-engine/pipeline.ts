@@ -9,16 +9,31 @@ import { analyzeAesthetic, type AestheticResult } from './aesthetic'
 import { analyzeCompositionFromGray, type CompositionResult } from './composition'
 import { dHashFromGray } from './duplicate'
 import { heuristicFaceDetect, type FaceResult } from './face'
+import { analyzeTiltFromGray, type TiltResult } from './tilt'
+import { analyzeSubjectFocus, type SubjectFocus } from './subject'
+import { analyzeMotionFromGray, type MotionResult } from './motion'
 
 export interface PipelineFeatures {
   sharpness: SharpnessResult
   aesthetic: AestheticResult
   composition: CompositionResult
   face: FaceResult
+  tilt: TiltResult
+  subject: SubjectFocus
+  motion: MotionResult
   dhash: string
   width: number
   height: number
 }
+
+// Feature flag v2 (rollback: false = path thumbnail lama untuk semua mode).
+export const V2_ANALYSIS_IMAGE = true
+// Flag Fase 2 (rollback: false = skoring v1 murni).
+export const V2_SUBJECT = true
+// Flag Fase 4: ranking burst + redundant reject (High saja).
+export const V2_BURST_RANK = true
+// Resolusi analysis image per mode (§7 new-architecture; High aktif dulu).
+export const ANALYSIS_IMAGE_SIZE = { fast: 640, balanced: 896, high: 1280 } as const
 
 const decodeCache = new Map<string, Promise<ImageData | null>>()
 
@@ -103,8 +118,11 @@ export function analyzeImageData(imageData: ImageData): PipelineFeatures | null 
     const aesthetic = analyzeAesthetic(imageData)
     const composition = analyzeCompositionFromGray(gray, w, h, mean)
     const face = heuristicFaceDetect(imageData, { sharpness: sharpness.sharpness })
+    const tilt = analyzeTiltFromGray(gray, w, h)
+    const subject = analyzeSubjectFocus(gray, w, h, face.hasFace, face.faceConfidence)
+    const motion = analyzeMotionFromGray(gray, w, h)
     const dhash = dHashFromGray(gray, w, h)
-    return { sharpness, aesthetic, composition, face, dhash, width: w, height: h }
+    return { sharpness, aesthetic, composition, face, tilt, subject, motion, dhash, width: w, height: h }
   } catch {
     return null
   }
