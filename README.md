@@ -1,6 +1,5 @@
 <div align="center">
-  <img src="public/logo.png" width="128" alt="OhMyFlow logo" />
-  <h1>OhMyFlow</h1>
+  <img src="public/banner.jpg" width="640" alt="OhMyFlow — AI photo culler for Windows" />
   <p><strong>AI photo culler for Windows. Pick your best shots 10x faster, 100% offline.</strong></p>
   <p>
     <img src="https://img.shields.io/badge/version-1.0.0-blue" alt="version" />
