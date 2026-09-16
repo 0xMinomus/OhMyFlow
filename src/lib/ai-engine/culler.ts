@@ -42,7 +42,8 @@ export const PRESETS: Record<Sensitivity, ModePreset> = {
 export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise<PhotoItem[]> {
   const preset = PRESETS[opts.mode] || PRESETS.balanced
   const results: PhotoItem[] = items.map((i) => ({ ...i }))
-  const hashes: { id: string; hash: string }[] = []
+  // Hash disimpan per-item (bukan push saat callback paralel selesai) agar urutan
+  // grouping deterministik: run yang sama, folder yang sama = hasil yang sama.
 
   const batchSize = preset.batchSize
   let done = 0
@@ -60,7 +61,7 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
         item.confidence = 0.4
         item.reasons = ['RAW — pratinjau tidak tersedia, perlu cek manual']
         item.reasonsEn = ['RAW — no preview, needs manual check']
-        hashes.push({ id: item.id, hash: '0'.repeat(64) })
+        ;(item as any).dhash = '0'.repeat(64)
         return
       }
       // Foto tanpa gambar sama sekali (thumbnail gagal & bukan RAW) → aman: Maybe, JANGAN throw.
@@ -72,7 +73,7 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
         item.confidence = 0.3
         item.reasons = ['Pratinjau gagal dimuat — masuk Maybe agar tidak hilang']
         item.reasonsEn = ['Preview failed to load — kept in Maybe to be safe']
-        hashes.push({ id: item.id, hash: '0'.repeat(64) })
+        ;(item as any).dhash = '0'.repeat(64)
         return
       }
       let feat: PipelineFeatures | null = null
@@ -90,12 +91,12 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
         item.confidence = 0.3
         item.reasons = ['Gagal dianalisis — masuk Maybe agar tidak hilang']
         item.reasonsEn = ['Analysis failed — kept in Maybe to be safe']
-        hashes.push({ id: item.id, hash: '0'.repeat(64) })
+        ;(item as any).dhash = '0'.repeat(64)
         return
       }
 
       const { sharpness: sh, aesthetic: ae, composition: co, face, dhash } = feat
-      hashes.push({ id: item.id, hash: dhash })
+      ;(item as any).dhash = dhash
 
       // Keputusan mata tertutup memakai ambang probabilitas per mode (high paling tegas).
       // WAJIB state 'closed': 'unknown' (pupil tak terbaca) tidak boleh vonis mata —
@@ -230,11 +231,22 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
     await new Promise((r) => setTimeout(r, 0)) // yield agar UI tidak freeze
   }
 
-  // Duplikat: hanya penalti, bukan auto-reject (kecuali skor memang rendah)
+  // Duplikat/burst yang bagus BUKAN sampah — selalu Maybe (bisa direview), tak pernah
+  // auto-reject. Rejects hanya untuk foto yang benar-benar cacat (blur, mata
+  // tertutup, exposure hancur). Skor tetap dipenalti agar yang terbaik menonjol.
+  // HIGH saja: anggota yang JELAS lebih lunak dari kembaran tertajamnya (gap fokus
+  // ≥7 DAN di bawah 82) = versi gagal dari momen yang sama → Rejects. Terkalibrasi:
+  // noise antar-frame identik hanya 0-1 (p90), jadi gap 7 = perbedaan nyata,
+  // terverifikasi visual (kasus 8012 vs 8015). Mode lain tidak berubah.
+  const hashes: { id: string; hash: string }[] = results.map((r) => ({
+    id: r.id,
+    hash: (r as any).dhash ?? '0'.repeat(64),
+  }))
   const groups = groupDuplicates(hashes, preset.duplicateThreshold)
   groups.forEach((ids) => {
     const groupItems = ids.map((id) => results.find((r) => r.id === id)!).filter(Boolean)
       .sort((a, b) => (b.score || 0) - (a.score || 0))
+    const maxFocus = Math.max(...groupItems.map((g) => g.sharpness ?? 0))
     for (let k = 1; k < groupItems.length; k++) {
       const g = groupItems[k]
       g.isDuplicate = true
@@ -242,6 +254,14 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
       g.reasons = [...(g.reasons || []), 'Duplikat / burst']
       g.reasonsEn = [...(g.reasonsEn || []), 'Duplicate / burst']
       g.score = Math.max(0, (g.score || 50) - preset.dupPenalty)
+      if (opts.mode === 'high') {
+        const f = g.sharpness ?? 100
+        if (maxFocus - f >= 7 && f < 82) {
+          ;(g as any).softestInBurst = true
+          g.reasons = [...g.reasons.filter((r) => r !== 'Tajam & eksposur bagus'), 'Terlunak di burst-nya']
+          g.reasonsEn = [...g.reasonsEn.filter((r) => r !== 'Sharp & well exposed'), 'Softest in its burst']
+        }
+      }
     }
   })
 
@@ -279,7 +299,9 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
     } else if (preset.compositionHardReject && comp < 20 && (item as any).compConfidence > 0.5) {
       cat = 'rejects' // komposisi hancur (high saja)
     } else if (item.isDuplicate) {
-      cat = s < 35 ? 'rejects' : 'maybe'
+      // Kembaran yang jelas lebih lunak dari yang tertajam = versi gagal → Rejects.
+      // Kembaran yang setara = Maybe (bisa dipilih manual).
+      cat = (s < 35 || (item as any).softestInBurst === true) ? 'rejects' : 'maybe'
     } else if (s >= (smoothObject ? preset.picksAt - 10 : preset.picksAt)) {
       // Picks harus bersih: tajam (kecuali objek mulus: fokus tak bermakna),
       // tidak clipped, komposisi layak. Palang objek 10 poin lebih rendah karena

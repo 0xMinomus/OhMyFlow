@@ -1,158 +1,233 @@
-# Arsitektur OhMyFlow — Bedah MyFlow untuk Vibecode Native Windows
+# ARCHITECTURE.md — Arsitektur OhMyFlow
 
-Dokumen ini menjawab: **arsitektur apa yang perlu digunakan agar remake MyFlow jadi software native Windows, dan bagaimana AI dipakai tanpa API.**
-
----
-
-## 1. Insight dari MyFlow Asli (doss.co.id)
-
-> MyFlow = AI Photo Culler lokal. Ribuan foto dipilah menit: Picks / Maybe / Rejects. Alasan per foto. Belajar dari koreksi user. 500 foto/menit di M4, Windows tergantung GPU. RAW+JPG pairing. XMP ke Lightroom. Privasi: tidak upload. Bahasa ID/EN. Rp 799k lifetime. Internet cuma untuk aktivasi & download komponen AI sekali.
-
-**Kata kunci arsitektur:** `lokal`, `offline`, `privasi`, `kecepatan`, `XMP`, `RAW`, `belajar lokal`.
+> Dokumen teknik terkini. Menjelaskan alur sistem, tech stack, proses culling,
+> dan model AI lokal secara mendalam. Status: sinkron dengan kode per 2026-09-16.
+> Konteks produk: `PRODUCT.md`. Memori sesi: `MEMORY.md`.
 
 ---
 
-## 2. Pilihan Arsitektur Native Windows
+## 1. Gambaran Sistem
 
-### Opsi A — Ideal (jika ada .NET SDK)
-- **C# .NET 8 + WinUI 3 (Windows App SDK)**
-- Kelebihan: benar-benar native, Fluent/Mica, akses DirectML paling optimal, integrasi file picker Windows terbaik.
-- Kekurangan: butuh Visual Studio, .NET SDK, tidak tersedia di env ini.
-
-### Opsi B — Vibecode (Dipilih, karena Node 24 tersedia)
-- **Electron 30 + Vite + React + TypeScript + Tailwind + sharp**
-- Kenapa tetap native?
-  - Electron pakai **WebView2 (Chromium embedded)** → `.exe` NSIS, taskbar, file association, auto-start, titleBarOverlay.
-  - Banyak app pro Windows pakai ini: VS Code, Figma, Slack → user tidak bedakan.
-  - **Vibecode speed 10×:** prompt → component → hot reload → build .exe dalam menit.
-- Alternatif lain ditolak:
-  - **Tauri (Rust):** butuh `rustc` → tidak ada.
-  - **Python PyQt/CustomTkinter:** UI jadul, styling susah, bundling berat.
-
-**Keputusan:** B untuk demo cepat, tapi struktur siap migrasi ke WinUI 3 (IPC & AI engine pure JS bisa port ke C#).
-
----
-
-## 3. Diagram Alir
+OhMyFlow adalah aplikasi desktop Windows (Electron) untuk photo culling offline.
+Satu prinsip menembus semua lapisan: **tidak ada jaringan, tidak ada API, tidak
+ada tebakan** — setiap keputusan harus deterministik, beralasan, dan terverifikasi
+di foto asli sebelum dikirim.
 
 ```
-[Fotografer] → [Pilih Folder / Kartu Memori]
-                ↓
-        [Main Process: fs:scanFolder]
-        - readdirSync, ext filter
-        - RAW+JPG pairing (basename match)
-        - stat size
-                ↓
-        [Preload: readImageAsDataUrl]
-        - sharp thumbnail (jika RAW → placeholder)
-                ↓
-        [Renderer: culler.ts - Worker Pool 4x]
-        ├─ blur.ts (Laplacian variance) ─→ sharpness 0-100
-        ├─ aesthetic.ts (exposure/contrast/color) ─→ score 0-100
-        ├─ duplicate.ts (dHash 64-bit) ─→ group burst
-        └─ face.ts (skin heuristic / ONNX) ─→ eyesClosed?
-                ↓
-        [Scoring: weight per shootType]
-        score = sharp*W1 + face*W2 + aesthetic*W3
-        → Picks ≥72 / Maybe ≥48 / Rejects else
-                ↓
-        [Review Grid: PhotoGrid.tsx]
-        - Tabs All/Picks/Maybe/Rejects
-        - Alasan ID/EN per foto
-        - Hover: pindah kategori → belajar lokal
-                ↓
-        [Ekspor: fs:writeXmpsBulk]
-        → .xmp sidecar (Rating + Label) → Lightroom langsung baca
+┌─ MAIN PROCESS (Node, electron/main.ts) ──────────────┐
+│ dialog · scanFolder · thumbnail (sharp) · XMP · move  │  ← satu-satunya akses disk
+└──────────────┬───────────────────────▲───────────────┘
+               │ IPC via contextBridge │  (preload.ts, terisolasi)
+┌──────────────▼───────────────────────┴───────────────┐
+│ RENDERER (React)                                      │
+│ FolderPicker → SensitivitySelector → CullingView ──┐  │
+│   → AI single-decode (1× decode/foto):              │  │
+│     blur · aesthetic · composition · face · dHash   │  │
+│   → skor komposit → Picks / Maybe / Rejects         │  │
+│   → PhotoGrid (lazy + paginasi) → Lightbox          │  │
+│   → Ekspor XMP / Pindah file ───────────────────────┘  │
+└──────────────────────────────────────────────────────┘
 ```
 
----
+Alur pengguna (terkunci): **pilih folder → pilih mode → culling → review →
+ekspor**. State awal hanya menampilkan pilih folder; hasil muncul setelah culling.
 
-## 4. Detail Modul AI Tanpa API
+## 2. Tech Stack
 
-Semua di `src/lib/ai-engine/`. 0 `fetch`, 0 `API_KEY`.
+| Lapisan | Teknologi | Alasan |
+|---|---|---|
+| Desktop shell | Electron 30 | `.exe` Windows native (taskbar, dialog file, associate), WebView2/Chromium |
+| UI | React 18 + TypeScript 5 + Tailwind CSS 3 | Komponen + type-safety; utility styling |
+| Build | Vite 5 + vite-plugin-electron | Dev hot-reload; output `dist/` + `dist-electron/` |
+| Citra | sharp 0.33 (satu-satunya dependency runtime) | Decode + resize cepat (libvips), dipakai main process |
+| State | Store custom `useSyncExternalStore` | Tanpa zustand/redux; cukup untuk app ini |
+| Packaging | electron-packager (folder app, TANPA asar) | Modul native sharp tidak bisa dimuat dari dalam asar |
+| Font | System stack (Cascadia Mono dkk.) | Tanpa unduhan — cocok untuk app offline-first |
 
-| Modul | Algoritma Lokal | Input | Output | Waktu | GPU |
-|-------|-----------------|-------|--------|-------|-----|
-| **blur.ts** | Laplacian variance `[-4,1,1,1,1]` pada grayscale 512px | ImageData | variance, sharpness 0-100 | ~4ms | CPU/WASM |
-| **aesthetic.ts** | Histogram luma + Hasler colorfulness | ImageData | exposure, contrast, colorfulness, score | ~3ms | CPU |
-| **duplicate.ts** | dHash 9×8 → 64-bit, Hamming ≤8 | ImageData | hash, group | ~2ms | CPU |
-| **face.ts** | Skin ratio + dark band heuristic *(upgrade: ONNX ultraface 320KB)* | ImageData 256px | hasFace, eyesClosed | ~5ms | CPU / DirectML |
+Versi terkunci di `package.json` + `package-lock.json` (di-commit).
 
-**Total per foto:** ~14ms sequential, ~4ms paralel (batch 4) → **~500/menit** tercapai.
+## 3. Main Process & IPC (`electron/`)
 
-### Kenapa Tidak Perlu API?
+`main.ts` adalah satu-satunya kode yang menyentuh disk. Renderer memanggilnya
+lewat `window.ohmyflow` (preload, `contextIsolation: true`, tanpa
+`nodeIntegration`).
 
-- Model berat (GPT Vision, Gemini) overkill untuk culling — cuma butuh sharp/eyes/dup.
-- Heuristic + pHash sudah 90% akurasi untuk wedding burst. Sisa 10% dikoreksi user → learning.
-- ONNX DirectML (jika upgrade) jalan di **RTX 5060 Laptop 8GB** tanpa cloud.
+| Channel IPC | Fungsi |
+|---|---|
+| `dialog:openFolder` | Dialog pilih folder (dipakai pilih sumber + tujuan pindah) |
+| `fs:scanFolder` | Daftar foto + pairing RAW+JPG (indeks O(n), bukan O(n²)) + `mtimeMs` |
+| `fs:getThumbnail` / `fs:getThumbnailsBatch` | Thumbnail 480px JPEG q62 via sharp, cache disk `userData/thumbs` (kunci: path+size+mtime), batch maks 12, konkurensi 4 |
+| `fs:clearThumbCache` | Bersihkan cache thumbnail |
+| `fs:readImageAsDataUrl` | File resolusi penuh (khusus lightbox; RAW murni → placeholder) |
+| `fs:writeXmp` / `fs:writeXmpsBulk` | Sidecar `.xmp` (Rating 5/3/1 + Label Green/Yellow/Red) |
+| `fs:movePhotos` | Pindah file (`rename`, fallback salin+hapus lintas drive); pasangan RAW+JPG dan `.xmp` ikut; nama kembar bernomor otomatis; lewati yang sudah di tujuan |
+| `shell:showInFolder` / `shell:openPath` | Integrasi Explorer |
+| `window:minimize/maximize/close` | Kontrol jendela custom (titlebar frameless) |
+| `app:getPath` | Path sistem (mis. `userData`) |
 
-### Contoh ONNX Upgrade (1 baris)
+**Kontrak keamanan:** file asli tidak pernah diubah/dihapus oleh culling maupun
+ekspor XMP. Penulisan hanya `.xmp` dan (eksplisit via dialog) pemindahan file.
 
-```ts
-// electron/main.ts → download sekali saat install
-// public/models/ultraface.onnx (github.com/Linzaer/Ultra-Light-Fast-Generic-Face-Detector)
-// Di face.ts:
-import * as ort from 'onnxruntime-web'
-ort.env.wasm.wasmPaths = './wasm/'
-const session = await ort.InferenceSession.create('/models/ultraface.onnx', { executionProviders: ['directml', 'wasm'] })
-```
+## 4. Alur Data Culling
 
----
+1. **Scan** — `scanFolder` mengembalikan metadata ringan (nama, path, ukuran,
+   `previewPath` untuk pasangan RAW+JPG). Tanpa preload gambar.
+2. **Thumbnail malas (lazy)** — grid hanya meminta thumbnail yang terlihat
+   (`IntersectionObserver`, rootMargin 400px). Cache dua lapis: memori LRU
+   (400 entri, dedup request berjalan) + cache disk. Hasil: folder 367 foto
+   14 MB-an tetap ringan dibuka.
+3. **Prefetch + analisis** — sebelum culling, thumbnail diambil batch; tiap foto
+   di-decode **tepat sekali** (`decodeOnce`, cache ≤60 entri, TTL 30 detik,
+   clamp sisi 128–768px), lalu SEMUA modul membaca `ImageData` yang sama.
+4. **Skoring & vonis** — `culler.ts` (§5).
+5. **Review** — grid terfilter (Semua/Picks/Maybe/Rejects), paginasi 60/halaman,
+   koreksi hover, alasan per foto (ID/EN), lightbox resolusi penuh (keyboard
+   ←/→/1/2/3/Esc), tombol lihat-di-folder.
+6. **Ekspor** — XMP massal dan/atau pindah file; daftar + statistik diperbarui.
 
-## 5. Perbandingan MyFlow vs OhMyFlow
+## 5. Mesin AI Lokal (`src/lib/ai-engine/`, 0 `fetch`, 0 API key)
 
-| Fitur | MyFlow (asli) | OhMyFlow (clone) |
-|-------|---------------|-------------------|
-| Platform | Mac M1+ / Win64 | Win32 x64 (Electron) |
-| AI | Lokal, closed | Lokal, open heuristic + ONNX ready |
-| Kecepatan | 500/menit M4 | 500/menit RTX 5060 (simulasi, terukur 300-600 tergantung foto) |
-| RAW | Semua merek | Pairing jadi, decode placeholder (upgrade sharp+libraw) |
-| XMP | Ya | Ya (fs:writeXmpsBulk) |
-| Belajar | Lokal, adaptif | Lokal JSON (siap SQLite) |
-| Harga | Rp 799k lifetime | Gratis (edukasi) |
-| Bahasa | ID/EN | ID/EN toggle |
+### 5.1 `pipeline.ts` — orkestrasi murni
+`analyzeImageData(imageData)` bebas DOM (dipakai browser DAN harness Node untuk
+kalibrasi dengan kode identik). `analyzeOne(dataUrl, maxSide)` = decode + analisis.
+`CullOptions.analyze` memungkinkan injeksi penganalisis (dipakai kalibrasi).
 
----
+### 5.2 `blur.ts` — ketajaman tiga lapis
+- **Laplacian global**: variansi kernel `[-4,1,1,1,1]`, dinormalisasi brightness,
+  dipetakan logaritmik `s = −38 + 48·log10(norm+1)`.
+- **Subjek**: median variansi 4 blok tengah grid 4×4
+  (`30·log10(v+1)`). Menangkap subjek blur dengan background tajam.
+- **Tepi**: fraksi piksel berespons kuat dengan ambang relatif kontras
+  (`max(12, mean·0.35)`), dipetakan `34·log10(e)+110`. Invarian terhadap
+  brightness (foto digelapkan 4× memberi nilai identik — terukur).
+- **Skor fokus** = `0.45·subjek + 0.35·global + 0.20·tepi`; `blurConfidence`
+  dari kesepakatan ketiganya; `accidental` (variansi <2 di ekstrem gelap/terang
+  = tutup lensa); guard `isFlat`; `gradP50/gradP99` (profil gradien untuk
+  deteksi objek-mulus).
 
-## 6. Keamanan & Privasi
+### 5.3 `aesthetic.ts` — exposure & warna
+Kurva exposure bertoleransi lebar + penalti clipping eksplisit; kontras dari
+simpangan baku histogram; colorfulness Hasler–Suesstrunk dengan **kurva jenuh**
+(abu <8 tetap dihukum, pastel 8–20 diangkat, vivid utuh — terukur zero-impact di
+231 foto manusia yang semuanya ≥51); deteksi color-cast; clipping dihitung
+**global, tengah, dan bibir tepi** secara terpisah. Aturan penting:
+- `whiteBackground` (gosong >8% + tepi >30% + tengah <10% + gelap <15%) = latar
+  putih studio → bebas penalti/alasan/gate highlight.
+- Latar terang bersih tanpa gosong → kurva lembut (bukan cacat).
+- Alasan hanya untuk bukti kuat; skor tanpa bonus arbitrer.
 
-- `main.ts` hanya `readFileSync` & `writeFileSync` `.xmp` → tidak `unlink`/`rename` foto asli.
-- `preload.ts` expose minimal API via `contextBridge` → `contextIsolation:true`, `sandbox:false` cuma untuk sharp.
-- Tidak ada `nodeIntegration`.
-- Aktivasi lisensi: simpan `userData/license.json` → cek offline, pindah device manual.
+### 5.4 `composition.ts` — framing
+Peta ketertarikan (gradien |dx|+|dy|) pada grid 16×12; metrik: `centerBias`,
+`maxCellShare` (sel 3×3), `borderShare`, `subjectSize`, `maxEdge`. Penalti hanya
+untuk yang jelas buruk: sudut (−28), tepi ramai/terpotong (−20), subjek mungil
+(−25), tengah kosong (−12); maks 2 alasan. Netral 55 bila datar. Aturan
+"tidak ada subjek" yang lama DIHAPUS setelah terbukti salah sasaran di 183/231
+foto (keramaian merata adalah komposisi sah).
 
----
+### 5.5 `duplicate.ts` — burst
+dHash 9×8 (64-bit), Hamming early-exit, guard hash-datar, grouping penuh (<250)
+atau jendela geser (±40, karena burst berurutan). Duplikat bagus TIDAK PERNAH
+auto-reject — selalu Maybe; hanya penalti skor. Pengecualian satu-satunya:
+mode High menolak anggota yang jelas lebih lunak dari kembaran tertajamnya
+(gap fokus ≥7 dan <82, terverifikasi visual).
 
-## 7. Build & Distribusi Windows
+### 5.6 `face.ts` — wajah & mata (deterministik, tanpa random)
+- Kulit: lokus YCbCr (Cb 76–128, Cr 132–174) + aturan RGB cepat.
+- Tiga jalur: **tier 1** (terpusat) butuh struktur mata; **tier 2** (menyebar:
+  grup) butuh dark simetris; **bigSkin** (close-up memenuhi frame) butuh mata.
+  Tanpa struktur → bukan wajah (tembok oranye lolos uji).
+- Mata: **gumpalan** (dark simetris + TINGGI ≥3 baris = pupil → terbuka) vs
+  **garis tipis** (bulu mata). Vonis tertutup butuh BUKTI POSITIF garis bulu
+  (simetris + darkRatio ≥0.01 + terkonsentrasi baris + tajam + skin<0.6, p=0.72).
+  Tanpa bukti = unknown (aman, tidak divonis). Skala penuh → terbuka/blink
+  tidak divonis.
+- `skinRatio` diekspos untuk diagnostik.
 
-```json
-// package.json build
-"win": { "target": "nsis", "icon": "build/icon.ico" },
-"nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
-```
+### 5.7 `culler.ts` — preset, skor, vonis
 
-- `npm run build` → `dist/index.html` + `dist-electron/main.js` (Vite)
-- `electron-builder --dir` → `dist/win-unpacked/OhMyFlow.exe` (portable, bisa dikirim)
-- `electron-builder --win` → `OhMyFlow-Setup-1.0.0.exe` (installer, perlu bypass sign di non-admin)
+| Param | Fast | Balanced | High |
+|---|---|---|---|
+| analysisSize / batch | 256 / 8 | 384 / 6 | 512 / 4 |
+| bobot sharp/face/aesth/comp | .37/.27/.26/.10 | .34/.26/.25/.15 | .32/.24/.24/.20 |
+| dupThreshold / dupPenalty | 9 / 8 | 7 / 10 | 5 / 14 |
+| picksAt / rejectBelow | 75 / 40 | 70 / 45 | 72 / 48 |
+| hardBlurBelow / picksFocusMin | 45 / 60 | 55 / 60 | 60 / 60 |
+| blownRejectAt / confRejectFloor | 18 / .45 | 14 / .32 | 12 / .28 |
+| eyeThreshold / exposureHR / compHR | .70 / ✕ / ✕ | .60 / ✓ / ✕ | .50 / ✓ / ✓ |
 
-**Ukuran:** ~180MB unpacked (Electron + Chromium + sharp libvips). Bisa di-trim ke ~90MB dengan `electron-forge` + `asar`.
+Urutan vonis: mata-tertutup → accidental → hardBlur (kecuali objek-mulus /
+proteksi-mata) → gelap-total → blown-ekstrem → blownMid → komposisi (high) →
+duplikat → picks (+gate fokus/kliping/komposisi; objek −10) → rejectBelow →
+jaring pengaman. Aturan pendukung: proteksi mata-terbuka-jelas (pupil teresolusi
++ fokus ≥50, terbukti menyelamatkan selfie bagus tanpa menyelamatkan jari di
+lensa), faceScore diskala fokus, mata-unknown 78 vs terbuka 88.
 
----
+**Mode objek otomatis** (tanpa wajah + permukaan mulus + rim tajam): skor =
+aesthetic×0.6 + komposisi×0.4, tanpa vonis blur, alasan "pucat" dibungkam.
+Terbukti 0/231 cocok di foto manusia.
 
-## 8. Next Step Vibecode (Prompt untuk AI)
+**Determinisme**: hash dirakit searah urutan foto (bukan dari callback paralel) —
+run yang sama = hasil byte-identik (terverifikasi dua run).
 
-```
-Tambahkan ONNX face detection:
-- Download ultraface.onnx ke public/models/
-- Di face.ts, ganti heuristic dengan onnxruntime-web DirectML
-- Benchmark 100 foto di RTX 5060, target <2ms/face
-```
+## 6. UI (`src/components/`, `src/App.tsx`)
 
-```
-Tambah RAW decode beneran:
-- npm i sharp-raw atau wasm libraw
-- Di main.ts readImageAsDataUrl, jika .ARW/.CR3, extract embedded JPG via tiff tag
-```
+Bahasa visual: terminal-inspired gelap — monospace sistem, border tipis berlapis
+(frame > section > kartu), tombol bracket `[ Label ]`, section bernomor
+(`01. FOLDER / 02. MODE CULLING / 03. HASIL` via `<fieldset>`+`<legend>`),
+warna hanya untuk status (hijau/kuning/merah), radius 2–6px. Tanpa gradient,
+glow, emoji, atau ilustrasi.
 
-Ini menjawab pertanyaan inti user: **AI dipakai lokal via ONNX DirectML + heuristic, tanpa API, agar privasi & biaya 0.**
+Alur dua state: awal = HANYA pilih folder; setelah folder → mode + tombol;
+setelah culling → hasil (tab, paginasi, lightbox, ekspor/pindah, footer status
+live). Kartu foto: nomor urut + badge + skor, thumbnail malas, nama + dimensi
+(dari thumbnail ter-decode) + maks 3 alasan, koreksi hover, ikon folder.
+Estimasi waktu per mode dihitung live dari jumlah foto.
 
+## 7. Kalibrasi (metodologi + hasil)
+
+Metode baku: harness Node (bundle esbuild + decode sharp + CSV) memakai **kode
+skoring yang 100% sama** dengan produksi → distribusi + alasan per kategori →
+contact sheet (montase sharp berlabel) → inspeksi visual per foto yang pindah
+kategori → setel ambang → ulangi. Setiap vonis baru wajib lolos uji
+"tidak ada foto tajam di Rejects" dan uji determinisme. File harness/sheet
+DIHAPUS setiap selesai (folder kerja bersih).
+
+| Dataset | Isi | Fast | Balanced | High |
+|---|---|---|---|---|
+| DIGICAM | 231 JPG manusia kasual | 209/19/3 | 201/24/6 | 192/26/13 |
+| FIX KERAMIK | 74 JPG produk | 23/48/3 | 47/24/3 | 35/22/17 |
+| bulbah | 367 JPG burst acara | — | — | 140/224/3 |
+
+(Format Picks/Maybe/Rejects. Maybe DIGICAM 8–11% = dalam target 10–25%.)
+Kasus landmark yang diselesaikan via data: mata-hantu di keramik (14→0),
+false-reject highlight pada grup backlit, uniform-komposisi spam (183 foto),
+wajah close-up tak terdeteksi, grouping nondeterministik antar-run.
+
+Keterbatasan jujur: foto layar, subjek-bergerak-dengan-bg-tajam, malam-bokeh,
+kedip-murni-di-burst-statis, dan makro-kulit vs beige memerlukan segmentasi/ML
+(di luar heuristik; jatuh ke Maybe, bukan Picks).
+
+## 8. Build, Distribusi & Gotcha
+
+- `npm run dev` (hot-reload) · `npm run build` (tsc + vite) · `npm run pack`
+  (exe) · `npm start` (tanpa kemas).
+- Output: `release/OhMyFlow-win32-x64/OhMyFlow.exe` (portable, folder app).
+- **Gotcha yang sudah terbukti**: (1) `electron-builder` gagal ekstrak winCodeSign
+  (butuh symlink admin) → pakai `electron-packager`; (2) `icon.ico` harus ICO
+  multi-ukuran valid (png-to-ico; rename PNG→ICO merusak rcedit); (3) TANPA asar
+  (modul native sharp); (4) Vite mengosongkan `dist/` → output pack di `release/`;
+  (5) EBUSY saat pack = proses app masih jalan → kill dulu.
+- Smoke test: jalankan exe ±8 detik, proses hidup + RAM wajar (~80 MB idle).
+
+## 9. Keamanan & Privasi
+
+Nol request jaringan untuk pemrosesan foto; nol API key; tidak ada telemetri.
+Penulisan disk terbatas pada: cache thumbnail (`userData/thumbs`), file `.xmp`,
+dan pemindahan eksplisit via dialog. Preload mengekspos permukaan minimal.
+
+## 10. Roadmap
+
+ONNX ultraface (DirectML) · decode pratinjau RAW penuh · SQLite histori koreksi ·
+auto-update · installer NSIS + code signing · deteksi layar · segmentasi subjek ·
+deteksi tilt · kebijakan duplikat-burst→Rejects (**DITAHAN** — agresif, butuh
+persetujuan eksplisit user).
