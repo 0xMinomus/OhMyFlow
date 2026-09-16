@@ -14,7 +14,7 @@
     "dev:electron": "npm run build:electron && concurrently \"vite --host\" \"wait-on http://localhost:5173 && electron dist-electron/main.js\"",
     "build:electron": "tsc -p tsconfig.electron.json",
     "start": "electron dist-electron/main.js",
-    "pack": "npm run build && npm run build:electron && electron-packager . OhMyFlow --platform=win32 --arch=x64 --out=release --overwrite --prune --ignore=\"^/(test-photos|release|dist-electron/electron|src|scripts|public|electron|DIGICAM|FIX KERAMIK|bulbah|Foto OSIS skvela)\" --icon=build/icon.ico",
+    "pack": "npm run build && npm run build:electron && electron-packager . OhMyFlow --platform=win32 --arch=x64 --out=release --overwrite --prune --ignore=\"^/(test-photos|release|dist-electron/electron|src|scripts|public|electron|DIGICAM|FIX KERAMIK|bulbah|Foto OSIS skvela|MEMORY\\.md|ARCHITECTURE\\.md|PRODUCT\\.md|PLAN\\.md|fase-update\\.md|new-architecture\\.md|opencode\\.json|\\.gitignore|\\.gitattributes|tsconfig.*|postcss\\.config\\.cjs|tailwind\\.config\\.cjs|vite\\.config\\.ts)\" --icon=build/icon.ico",
     "pack:legacy": "npm run build && npm run build:electron && electron-builder --dir",
     "dist": "npm run build && npm run build:electron && electron-builder",
     "dist:win": "npm run build && npm run build:electron && electron-builder --win --x64"

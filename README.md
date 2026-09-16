@@ -30,12 +30,14 @@ All of the AI runs **on your own machine** using ONNX Runtime plus classic compu
 ## Features
 
 - **Three auto-culling modes** - Fast (first pass), Balance (daily driver), High (final, most thorough selection), each with a live time estimate.
-- **Automatic content detection** - photos of people are judged with face and eye logic, while smooth object shots (product, ceramics, food) are judged on exposure, composition, and color with no false "closed eyes" verdicts.
-- **Multi-signal scoring** - focus sharpness (Laplacian plus subject sharpness plus edge density), exposure and highlight/shadow clipping, white balance, framing and composition, perceptual-hash duplicates, and eye state.
-- **A reason for every photo** - each decision ships with a short explanation in Indonesian and English (for example *"Blurry / out of focus"* or *"Duplicate / burst"*).
+- **Smarter High mode** - analyzes a dedicated high-resolution image (not the grid thumbnail), ranks burst/duplicate frames and rejects the clearly redundant ones while always keeping a keeper, and refuses Picks for photos with ruined exposure or soft dim subjects.
+- **Automatic content detection** - photos of people are judged with face and eye logic (including a local ONNX face model for hard cases), while smooth object shots (product, ceramics, food) are judged on exposure, composition, and color with no false "closed eyes" verdicts.
+- **Multi-signal scoring** - focus sharpness (Laplacian plus subject sharpness plus edge density), motion hints, exposure and highlight/shadow clipping, white balance, framing and composition, tilt, perceptual-hash duplicates, and eye state.
+- **A reason for every photo** - each decision ships with a short explanation in Indonesian and English (for example *"Blurry / out of focus"*, *"Similar frame — another version is better"*). No verdict is ever silent.
+- **Manual sorting** - review grid and fullscreen lightbox with centered verdict buttons, a live status badge, customizable keyboard shortcuts (default Q/W/E), and PlayStation controller support (L1/R1 to move, Square/Triangle/Circle to rate, fully remappable).
 - **RAW+JPG pairing** - pairs like `IMG_1234.CR3` + `IMG_1234.JPG` are treated as one photo with one shared rating.
 - **Move culled files** - move Picks (optionally including Maybe) into a fresh folder. RAW+JPG pairs and `.xmp` files come along, and name collisions get numbered automatically.
-- **Lightbox review** - click any photo for a full-resolution preview with keyboard navigation (arrow keys to move, 1/2/3 to rate, Esc to close).
+- **Lightbox review** - click any photo for a full-resolution preview with keyboard navigation (arrow keys to move, your custom keys to rate, Esc to close).
 - **Lazy thumbnails with disk cache** - folders with thousands of photos stay light and fast.
 - **Bilingual UI** - Indonesian and English.
 
@@ -53,11 +55,15 @@ All of the AI runs **on your own machine** using ONNX Runtime plus classic compu
 
 - Windows 10/11, 64-bit
 - [Node.js](https://nodejs.org/) 24 or newer (only needed to build from source)
-- An NVIDIA GPU is optional (used automatically when present; CPU works fine)
+- Everything runs on CPU. No GPU, account, or internet needed.
 
 ### Run the release build (no tools needed)
 
-Download `OhMyFlow.exe` from the [Releases](../../releases) page and run it directly. It is portable and needs no installation.
+1. Download `OhMyFlow-v1.0-portable-win32-x64.zip` from the [Releases](../../releases) page.
+2. Right-click the zip, choose Extract All, and pick a destination folder.
+3. Open the extracted folder and double-click `OhMyFlow.exe`.
+
+It is portable and needs no installation. If Windows SmartScreen appears (the app is not code-signed yet), click More info, then Run anyway.
 
 ### Build from source
 
@@ -102,11 +108,16 @@ OhMyFlow/
 ├── src/
 │   ├── components/      # UI: folder picker, modes, grid, lightbox, modal, header
 │   ├── lib/ai-engine/   # Culling engine: blur, aesthetic, composition,
-│   │                    #   duplicate, face, culler (orchestration plus per-mode presets)
+│   │                    #   duplicate, face, subject, motion, tilt, culler
+│   │                    #   (orchestration plus per-mode presets), reasons
+│   ├── lib/ml/          # Local ONNX face detector (fail-safe) plus eye ROI
+│   ├── lib/gamepad.ts   # Controller support (no dependencies)
 │   ├── lib/thumbCache.ts
-│   ├── store/           # App state
+│   ├── store/           # App state (settings, keybinds, controller binds)
 │   └── types/
 ├── public/logo.png      # App logo
+├── public/models/       # Bundled ONNX model (MIT licensed, see ARCHITECTURE notes)
+├── scripts/             # Build helpers (ONNX wasm copy)
 ├── build/               # icon.ico plus Windows packaging assets
 └── test-photos/         # Sample photos for a quick trial run
 ```
