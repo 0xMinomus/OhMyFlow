@@ -35,3 +35,9 @@ Desktop.ini
 .idea/
 .vite/
 .cache/
+
+# ── Private working docs (instruksi user & config lokal, bukan publik) ──
+PLAN.md
+fase-update.md
+new-architecture.md
+opencode.json
