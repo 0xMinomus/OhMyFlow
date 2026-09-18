@@ -420,7 +420,7 @@ ipcMain.handle('fs:writeXmpsBulk', async (_e, items: { filePath: string, rating:
   return { ok, total: items.length }
 })
 
-ipcMain.handle('fs:movePhotos', async (_e, payload: { items: { filePath: string, pairedPath?: string }[], destDir: string }) => {
+ipcMain.handle('fs:movePhotos', async (_e, payload: { items: { filePath: string, pairedPath?: string, sub?: string }[], destDir: string }) => {
   const items = payload?.items ?? []
   const destDir = payload?.destDir
   if (!destDir) return { ok: false, moved: 0, movedPaths: [], failed: [], total: items.length, error: 'no-dest' }
@@ -458,29 +458,33 @@ ipcMain.handle('fs:movePhotos', async (_e, payload: { items: { filePath: string,
   for (const it of items) {
     try {
       if (!existsSync(it.filePath)) throw new Error('file-tidak-ditemukan')
+      // Subfolder per kategori ("Buat Folder Terpisah"): Picks/Maybe/Rejects.
+      // basename() = anti traversal, mkdir rekursif.
+      const dir = it.sub ? join(destDir, basename(it.sub)) : destDir
+      try { mkdirSync(dir, { recursive: true }) } catch {}
       // sudah di folder tujuan → anggap beres tanpa menyentuh
-      if (dirname(it.filePath) === destDir && (!it.pairedPath || dirname(it.pairedPath) === destDir)) {
+      if (dirname(it.filePath) === dir && (!it.pairedPath || dirname(it.pairedPath) === dir)) {
         movedPaths.push(it.filePath)
         continue
       }
       const jobs: [string, string][] = []
-      const destMain = uniqueDest(destDir, basename(it.filePath))
+      const destMain = uniqueDest(dir, basename(it.filePath))
       jobs.push([it.filePath, destMain])
-      if (it.pairedPath && existsSync(it.pairedPath) && dirname(it.pairedPath) !== destDir) {
-        jobs.push([it.pairedPath, uniqueDest(destDir, basename(it.pairedPath))])
+      if (it.pairedPath && existsSync(it.pairedPath) && dirname(it.pairedPath) !== dir) {
+        jobs.push([it.pairedPath, uniqueDest(dir, basename(it.pairedPath))])
       }
       // .xmp pendamping ikut pindah, mengikuti nama file tujuannya.
       // RAW+JPG berbagi basename → xmp yang sama; dedupe agar tidak dipindah dua kali.
       const seenXmp = new Set<string>()
       for (const src of [it.filePath, it.pairedPath].filter(Boolean) as string[]) {
-        if (dirname(src) === destDir) continue
+        if (dirname(src) === dir) continue
         const xmpSrc = join(dirname(src), basename(src, extname(src)) + '.xmp')
         const xmpKey = xmpSrc.toLowerCase()
         if (!existsSync(xmpSrc) || seenXmp.has(xmpKey)) continue
         seenXmp.add(xmpKey)
         const pairedJob = jobs.find(([s]) => s === src)
         const destBase = pairedJob ? basename(pairedJob[1], extname(pairedJob[1])) : basename(src, extname(src))
-        jobs.push([xmpSrc, uniqueDest(destDir, destBase + '.xmp')])
+        jobs.push([xmpSrc, uniqueDest(dir, destBase + '.xmp')])
       }
       for (const [s, d] of jobs) moveOne(s, d)
       movedPaths.push(it.filePath)

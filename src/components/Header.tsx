@@ -71,7 +71,7 @@ export function Header() {
         />
         <div className="leading-tight min-w-0">
           <div className="font-mono text-xl font-bold text-white tracking-tight truncate">
-            OhMyFlow <span className="text-sm font-normal text-zinc-500">v1.0</span>
+            OhMyFlow <span className="text-sm font-normal text-zinc-500">v1.1</span>
           </div>
           <div className="font-mono text-xs text-zinc-500 truncate">Culling made simple.</div>
         </div>

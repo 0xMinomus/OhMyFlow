@@ -17,6 +17,8 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
   const [destDir, setDestDir] = useState<string | null>(null)
   const [withPicks, setWithPicks] = useState(true)
   const [withMaybe, setWithMaybe] = useState(false)
+  const [withRejects, setWithRejects] = useState(false)
+  const [splitFolders, setSplitFolders] = useState(false)
   const [moving, setMoving] = useState(false)
   const [result, setResult] = useState<MoveResult | null>(null)
 
@@ -25,6 +27,8 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
       setDestDir(null)
       setWithPicks(true)
       setWithMaybe(false)
+      setWithRejects(false)
+      setSplitFolders(false)
       setMoving(false)
       setResult(null)
     }
@@ -41,7 +45,12 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
 
   const picks = photos.filter(p=>p.category==='picks')
   const maybe = photos.filter(p=>p.category==='maybe')
-  const selected = [...(withPicks ? picks : []), ...(withMaybe ? maybe : [])]
+  const rejects = photos.filter(p=>p.category==='rejects')
+  const selected = [
+    ...(withPicks ? picks.map(p=>({ filePath: p.filePath, pairedPath: p.pairedPath, sub: splitFolders ? 'Picks' : undefined })) : []),
+    ...(withMaybe ? maybe.map(p=>({ filePath: p.filePath, pairedPath: p.pairedPath, sub: splitFolders ? 'Maybe' : undefined })) : []),
+    ...(withRejects ? rejects.map(p=>({ filePath: p.filePath, pairedPath: p.pairedPath, sub: splitFolders ? 'Rejects' : undefined })) : []),
+  ]
   const canMove = !!destDir && selected.length > 0 && !moving
 
   const pickDest = async () => {
@@ -53,10 +62,7 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
     if (!canMove || !destDir) return
     setMoving(true)
     try {
-      const res = await window.ohmyflow.movePhotos(
-        selected.map(p=>({ filePath: p.filePath, pairedPath: p.pairedPath })),
-        destDir
-      )
+      const res = await window.ohmyflow.movePhotos(selected, destDir)
       const movedSet = new Set(res.movedPaths ?? [])
       const movedPhotos = photos.filter(p=> movedSet.has(p.filePath))
       dropMemThumbs(movedPhotos.flatMap(p=> [p.filePath, ...(p.pairedPath ? [p.pairedPath] : [])]))
@@ -119,11 +125,22 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
                 <input type="checkbox" checked={withMaybe} disabled={maybe.length === 0} onChange={(e)=> setWithMaybe(e.target.checked)} className="h-3.5 w-3.5 shrink-0 accent-white" />
                 <span>[{withMaybe ? 'x' : ' '}] Maybe <span className="tabular-nums text-zinc-500">({maybe.length})</span> <span className="text-[10px] text-zinc-500">· {t('opsional', 'optional')}</span></span>
               </label>
+              <label className={`flex cursor-pointer items-center gap-2.5 font-mono text-[12px] ${rejects.length === 0 ? 'opacity-40' : 'text-zinc-200'}`}>
+                <input type="checkbox" checked={withRejects} disabled={rejects.length === 0} onChange={(e)=> setWithRejects(e.target.checked)} className="h-3.5 w-3.5 shrink-0 accent-white" />
+                <span>[{withRejects ? 'x' : ' '}] Rejects <span className="tabular-nums text-zinc-500">({rejects.length})</span> <span className="text-[10px] text-zinc-500">· {t('opsional', 'optional')}</span></span>
+              </label>
+              <label className="flex cursor-pointer items-center gap-2.5 font-mono text-[12px] text-zinc-200">
+                <input type="checkbox" checked={splitFolders} onChange={(e)=> setSplitFolders(e.target.checked)} className="h-3.5 w-3.5 shrink-0 accent-white" />
+                <span>[{splitFolders ? 'x' : ' '}] {t('Buat Folder Terpisah', 'Separate Folders')} <span className="text-[10px] text-zinc-500">· Picks / Maybe / Rejects</span></span>
+              </label>
             </div>
 
             <div className="font-mono text-[10px] leading-snug text-zinc-500">
-              {t('RAW+JPG dan .xmp ikut dipindah · Nama kembar diberi nomor · Rejects tidak ikut.',
-                 'RAW+JPG pairs and .xmp files move along · Duplicate names get numbered · Rejects stay.')}
+              {splitFolders
+                ? t('Tiap tag masuk subfoldernya (Picks/Maybe/Rejects) · RAW+JPG dan .xmp ikut · Nama kembar diberi nomor.',
+                    'Each tag goes to its subfolder (Picks/Maybe/Rejects) · RAW+JPG pairs and .xmp files follow · Duplicate names get numbered.')
+                : t('RAW+JPG dan .xmp ikut dipindah · Nama kembar diberi nomor.',
+                    'RAW+JPG pairs and .xmp files move along · Duplicate names get numbered.')}
             </div>
 
             <div className="flex justify-end gap-2">

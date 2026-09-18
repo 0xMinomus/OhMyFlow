@@ -33,7 +33,7 @@ declare global {
       clearThumbCache: () => Promise<{ ok: boolean, cleared?: number, error?: string }>
       writeXmp: (p: string, c: string) => Promise<any>
       writeXmpsBulk: (items: any[]) => Promise<{ ok: number, total: number }>
-      movePhotos: (items: { filePath: string, pairedPath?: string }[], destDir: string) => Promise<{ ok: boolean, moved: number, movedPaths: string[], failed: { file: string, error: string }[], total: number, error?: string }>
+      movePhotos: (items: { filePath: string, pairedPath?: string, sub?: string }[], destDir: string) => Promise<{ ok: boolean, moved: number, movedPaths: string[], failed: { file: string, error: string }[], total: number, error?: string }>
       showInFolder: (p: string) => Promise<void>
       openPath: (p: string) => Promise<void>
       getPath: (n: string) => Promise<string>
