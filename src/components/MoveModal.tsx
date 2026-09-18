@@ -120,8 +120,8 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
               <button onClick={()=> window.ohmyflow.showInFolder(result.dest)} className="flex-1 rounded border border-flow-500 px-4 py-2 font-mono text-[11px] font-bold text-zinc-200 transition hover:border-zinc-400 hover:text-white">
                 {t('[ Lihat Folder ]', '[ Open Folder ]')}
               </button>
-              <button onClick={onClose} autoFocus className="flex-1 rounded border border-white bg-white px-4 py-2 font-mono text-[11px] font-bold text-black transition hover:bg-zinc-200">
-                {t('[ Tutup ]', '[ Close ]')}
+              <button onClick={()=> { appStore.resetSession(); onClose() }} autoFocus className="flex-1 rounded border border-emerald-400 bg-emerald-400 px-4 py-2 font-mono text-[11px] font-bold text-black transition hover:bg-emerald-300">
+                {t('[ Lanjut → ]', '[ Continue → ]')}
               </button>
             </div>
           </div>

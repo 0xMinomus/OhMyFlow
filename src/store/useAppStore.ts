@@ -64,6 +64,7 @@ interface AppState {
   setPadConnected: (v:boolean)=>void
   updatePhotoCategory: (id:string, cat: 'picks'|'maybe'|'rejects')=>void
   removePhotos: (ids:string[])=>void
+  resetSession: ()=>void
 }
 
 function loadPadbinds(): Padbinds {
@@ -130,6 +131,7 @@ let state: AppState = {
   setPadConnected: (v)=>{ state.padConnected=v; emit() },
   updatePhotoCategory: (id, cat)=>{ state.photos = state.photos.map(ph=> ph.id===id? {...ph, category:cat}:ph); if (state.stats) { const rest = state.photos; state.stats = { ...state.stats, picks: rest.filter(p=>p.category==='picks').length, maybe: rest.filter(p=>p.category==='maybe').length, rejects: rest.filter(p=>p.category==='rejects').length } } emit() },
   removePhotos: (ids)=>{ const gone = new Set(ids); state.photos = state.photos.filter(ph=> !gone.has(ph.id)); if (state.stats) { const rest = state.photos; state.stats = { ...state.stats, total: rest.length, picks: rest.filter(p=>p.category==='picks').length, maybe: rest.filter(p=>p.category==='maybe').length, rejects: rest.filter(p=>p.category==='rejects').length } } emit() },
+  resetSession: ()=>{ state.photos = []; state.stats = null; state.step = 'select'; state.selectedCategory = 'all'; state.cullingProgress = null; emit() },
 }
 function emit(){ listeners.forEach(l=>l()) }
 
