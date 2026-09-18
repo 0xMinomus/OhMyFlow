@@ -4,19 +4,36 @@ import { DEFAULT_PADBINDS } from '@/lib/gamepad'
 
 type Step = 'select' | 'culling' | 'review'
 
-export interface Keybinds { picks: string; maybe: string; rejects: string }
-export const DEFAULT_KEYBINDS: Keybinds = { picks: 'Q', maybe: 'W', rejects: 'E' }
+export interface Keybinds { picks: string; maybe: string; rejects: string; prev: string; next: string }
+export const DEFAULT_KEYBINDS: Keybinds = { picks: 'Q', maybe: 'W', rejects: 'E', prev: 'ArrowLeft', next: 'ArrowRight' }
+
+const KEY_ACTIONS = ['picks', 'maybe', 'rejects', 'prev', 'next'] as const
+export type KeyAction = typeof KEY_ACTIONS[number]
 
 function loadKeybinds(): Keybinds {
   try {
     const raw = localStorage.getItem('ohmyflow-keybinds')
     if (!raw) return { ...DEFAULT_KEYBINDS }
     const o = JSON.parse(raw)
-    const clean = (v: unknown, fb: string) => typeof v === 'string' && v.length > 0 ? v.toUpperCase() : fb
-    return { picks: clean(o.picks, 'Q'), maybe: clean(o.maybe, 'W'), rejects: clean(o.rejects, 'E') }
+    const clean = (v: unknown, fb: string) => typeof v === 'string' && v.length > 0 ? v : fb
+    return {
+      picks: clean(o.picks, 'Q'), maybe: clean(o.maybe, 'W'), rejects: clean(o.rejects, 'E'),
+      prev: clean(o.prev, 'ArrowLeft'), next: clean(o.next, 'ArrowRight'),
+    }
   } catch {
     return { ...DEFAULT_KEYBINDS }
   }
+}
+
+/** Tampilan tombol keyboard (panah jadi glif). */
+export function keyGlyph(k: string): string {
+  const u = k.toUpperCase()
+  if (u === 'ARROWLEFT') return '←'
+  if (u === 'ARROWRIGHT') return '→'
+  if (u === 'ARROWUP') return '↑'
+  if (u === 'ARROWDOWN') return '↓'
+  if (u === ' ') return 'Space'
+  return k.length === 1 ? k.toUpperCase() : k
 }
 
 interface AppState {
@@ -40,7 +57,7 @@ interface AppState {
   setProgress: (p:{done:number,total:number,label?:string}|null)=>void
   setStats: (s:CullStats|null)=>void
   setCategory: (c:'all'|'picks'|'maybe'|'rejects')=>void
-  setKeybind: (a:'picks'|'maybe'|'rejects', k:string)=>void
+  setKeybind: (a:KeyAction, k:string)=>void
   resetKeybinds: ()=>void
   setPadbind: (a:'picks'|'maybe'|'rejects'|'prev'|'next', b:number)=>void
   resetPadbinds: ()=>void
@@ -87,11 +104,11 @@ let state: AppState = {
   setStats: (s)=>{ state.stats=s; emit() },
   setCategory: (c)=>{ state.selectedCategory=c; emit() },
   setKeybind: (a,k)=>{
-    const key = k.toUpperCase()
+    const key = k.length === 1 ? k.toUpperCase() : k
     // tukar bila bentrok dengan aksi lain (satu tombol = satu aksi)
     const next = { ...state.keybinds } as Keybinds
-    for (const act of ['picks','maybe','rejects'] as const) {
-      if (act !== a && next[act] === key) next[act] = next[a]
+    for (const act of KEY_ACTIONS) {
+      if (act !== a && next[act].toUpperCase() === key.toUpperCase()) next[act] = next[a]
     }
     next[a] = key
     state.keybinds = next

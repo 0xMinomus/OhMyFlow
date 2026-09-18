@@ -48,14 +48,14 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
-      else if (e.key === 'ArrowLeft' && hasPrev) setCurId(navIds[idx - 1])
-      else if (e.key === 'ArrowRight' && hasNext) setCurId(navIds[idx + 1])
+      else if (e.key.toUpperCase() === binds.prev.toUpperCase() && hasPrev) setCurId(navIds[idx - 1])
+      else if (e.key.toUpperCase() === binds.next.toUpperCase() && hasNext) setCurId(navIds[idx + 1])
       else if (!p) return
       else {
         const k = e.key.toUpperCase()
-        if (k === binds.picks) appStore.updatePhotoCategory(p.id, 'picks')
-        else if (k === binds.maybe) appStore.updatePhotoCategory(p.id, 'maybe')
-        else if (k === binds.rejects) appStore.updatePhotoCategory(p.id, 'rejects')
+        if (k === binds.picks.toUpperCase()) appStore.updatePhotoCategory(p.id, 'picks')
+        else if (k === binds.maybe.toUpperCase()) appStore.updatePhotoCategory(p.id, 'maybe')
+        else if (k === binds.rejects.toUpperCase()) appStore.updatePhotoCategory(p.id, 'rejects')
       }
     }
     window.addEventListener('keydown', onKey)

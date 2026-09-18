@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useStore, appStore, DEFAULT_KEYBINDS } from '@/store/useAppStore'
+import { useStore, appStore, DEFAULT_KEYBINDS, keyGlyph, type KeyAction } from '@/store/useAppStore'
 import { waitPadButton, firstPad, padKind, type PadAction } from '@/lib/gamepad'
 import { PadButton } from '@/components/PadButton'
 
@@ -18,7 +18,7 @@ export function Header() {
   const padbinds = useStore(s=>s.padbinds)
   const padOn = useStore(s=>s.padConnected)
   const [open, setOpen] = useState(false)
-  const [capture, setCapture] = useState<'picks' | 'maybe' | 'rejects' | null>(null)
+  const [capture, setCapture] = useState<KeyAction | null>(null)
   const [padCapture, setPadCapture] = useState<PadAction | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const t = (id: string, en: string) => (lang==='id' ? id : en)
@@ -47,7 +47,7 @@ export function Header() {
     const onKey = (e: KeyboardEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      const reserved = ['ESCAPE', 'ARROWLEFT', 'ARROWRIGHT', 'TAB', ' ']
+      const reserved = ['ESCAPE', 'TAB', ' ']
       if (reserved.includes(e.key.toUpperCase())) { setCapture(null); return }
       appStore.setKeybind(capture, e.key.length === 1 ? e.key : e.key)
       setCapture(null)
@@ -143,17 +143,20 @@ export function Header() {
             <legend className="px-1 font-mono text-[11px] font-bold tracking-widest text-zinc-300">
               {t('[ KEYBOARD ]', '[ KEYBOARD ]')}
             </legend>
-            {(['picks','maybe','rejects'] as const).map(act => (
+            {(['prev','next','picks','maybe','rejects'] as const).map(act => (
               <div key={act} className="mb-1.5 flex items-center justify-between gap-2">
-                <span className={`h-2 w-2 rounded-full ${act === 'picks' ? 'bg-emerald-400' : act === 'maybe' ? 'bg-amber-300' : 'bg-red-400'}`} aria-hidden="true" />
+                <span className={`h-2 w-2 rounded-full ${act === 'picks' ? 'bg-emerald-400' : act === 'maybe' ? 'bg-amber-300' : act === 'rejects' ? 'bg-red-400' : 'bg-zinc-500'}`} aria-hidden="true" />
                 <span className="flex-1 font-mono text-[11px] text-zinc-300">
-                  {act === 'picks' ? t('Picks', 'Picks') : act === 'maybe' ? t('Maybe', 'Maybe') : t('Reject', 'Reject')}
+                  {act === 'prev' ? t('← Sebelumnya', '← Previous')
+                    : act === 'next' ? t('Berikutnya →', 'Next →')
+                    : act === 'picks' ? t('Picks', 'Picks')
+                    : act === 'maybe' ? t('Maybe', 'Maybe') : t('Reject', 'Reject')}
                 </span>
                 <button
                   onClick={()=> setCapture(act)}
                   className={`min-w-[3rem] rounded-sm border px-2 py-1 text-center font-mono text-[11px] font-bold transition ${capture === act ? 'border-emerald-400 text-emerald-300' : 'border-flow-700 text-white hover:border-zinc-400'}`}
                 >
-                  {capture === act ? '…' : binds[act]}
+                  {capture === act ? '…' : keyGlyph(binds[act])}
                 </button>
               </div>
             ))}
@@ -163,7 +166,7 @@ export function Header() {
                   onClick={()=> { appStore.resetKeybinds(); setCapture(null) }}
                   className="mt-1 font-mono text-[10px] font-bold text-zinc-500 transition hover:text-white"
                 >
-                  {t(`[ Reset → ${DEFAULT_KEYBINDS.picks}/${DEFAULT_KEYBINDS.maybe}/${DEFAULT_KEYBINDS.rejects} ]`, `[ Reset → ${DEFAULT_KEYBINDS.picks}/${DEFAULT_KEYBINDS.maybe}/${DEFAULT_KEYBINDS.rejects} ]`)}
+                  {t('[ Reset bawaan ]', '[ Reset defaults ]')}
                 </button>}
           </fieldset>
           <fieldset className="rounded border border-flow-600 p-3">
@@ -180,6 +183,7 @@ export function Header() {
             )}
             {(['prev','next','picks','maybe','rejects'] as const).map(act => (
               <div key={act} className="mb-1.5 flex items-center justify-between gap-2">
+                <span className={`h-2 w-2 rounded-full ${act === 'picks' ? 'bg-emerald-400' : act === 'maybe' ? 'bg-amber-300' : act === 'rejects' ? 'bg-red-400' : 'bg-zinc-500'}`} aria-hidden="true" />
                 <span className="flex-1 font-mono text-[11px] text-zinc-300">
                   {act === 'prev' ? t('← Sebelumnya', '← Previous')
                     : act === 'next' ? t('Berikutnya →', 'Next →')
