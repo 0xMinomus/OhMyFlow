@@ -115,8 +115,30 @@ export function Header() {
       </div>
     </div>
     {open && (
-      <div ref={panelRef} className="border-b border-flow-600 bg-flow-900 px-4 py-3">
-        <div className="mx-auto grid max-w-3xl gap-4 sm:grid-cols-2">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+        onClick={()=> { if (!capture && !padCapture) setOpen(false) }}
+        role="presentation"
+      >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('Pengaturan', 'Settings')}
+        onClick={(e)=> e.stopPropagation()}
+        className="w-full max-w-lg rounded-md border border-flow-500 bg-flow-800 p-5"
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <div className="font-mono text-[13px] font-bold text-white">{t('Pengaturan', 'Settings')}</div>
+          <button
+            onClick={()=> { setOpen(false); setCapture(null); setPadCapture(null) }}
+            aria-label={t('Tutup', 'Close')}
+            className="rounded border border-flow-600 p-1.5 text-zinc-300 transition hover:border-zinc-400 hover:text-white"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
           <fieldset className="rounded border border-flow-600 p-3">
             <legend className="px-1 font-mono text-[11px] font-bold tracking-widest text-zinc-300">
               {t('[ KEYBOARD ]', '[ KEYBOARD ]')}
@@ -186,6 +208,13 @@ export function Header() {
                 </button>}
           </fieldset>
         </div>
+        <button
+          onClick={()=> { setOpen(false); setCapture(null); setPadCapture(null) }}
+          className="mt-4 w-full rounded border border-white bg-white px-4 py-2 font-mono text-[11px] font-bold text-black transition hover:bg-zinc-200"
+        >
+          {t('[ Tutup ]', '[ Close ]')}
+        </button>
+      </div>
       </div>
     )}
     </div>
