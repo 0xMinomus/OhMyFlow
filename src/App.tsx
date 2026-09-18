@@ -65,7 +65,7 @@ export default function App() {
             {hasPhotos ? `${photos.length} ${t('foto', 'photos')} | Mode: ${modeName} | ${status}` : status}
           </span>
           <span className="shrink-0 hidden sm:flex items-center gap-1.5">
-            OhMyFlow v1.1
+            OhMyFlow v1.2
             <span className="text-zinc-600">|</span>
             {padOn && (<span className="text-emerald-400 font-bold">[PAD]</span>)}
             {padOn && (<span className="text-zinc-600">|</span>)}

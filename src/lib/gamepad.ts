@@ -25,6 +25,33 @@ export function padButtonName(i: number): string {
   return PS_NAMES[i] ?? `T${i}`
 }
 
+export type PadKind = 'ps' | 'xbox' | 'generic'
+
+/** Tebak jenis controller dari id Gamepad API (Xbox 045e, Sony 054c, dsb). */
+export function padKind(id: string | undefined): PadKind {
+  const s = (id ?? '').toLowerCase()
+  if (s.includes('xbox') || s.includes('045e') || s.includes('x-input')) return 'xbox'
+  if (s.includes('playstation') || s.includes('054c') || s.includes('dualshock') || s.includes('dualsense') || s.includes('sony')) return 'ps'
+  return 'generic'
+}
+
+// Glif tombol per jenis controller (bentuk geometris/teks, bukan emoji).
+const PS_GLYPHS: Record<number, string> = {
+  0: '✕', 1: '○', 2: '□', 3: '△', 4: 'L1', 5: 'R1',
+  6: 'L2', 7: 'R2', 8: 'SHARE', 9: 'OPT', 10: 'L3', 11: 'R3',
+  12: '▲', 13: '▼', 14: '◀', 15: '▶', 16: 'PS',
+}
+const XBOX_GLYPHS: Record<number, string> = {
+  0: 'A', 1: 'B', 2: 'X', 3: 'Y', 4: 'LB', 5: 'RB',
+  6: 'LT', 7: 'RT', 8: 'VIEW', 9: 'MENU', 10: 'LS', 11: 'RS',
+  12: '▲', 13: '▼', 14: '◀', 15: '▶', 16: 'XBOX',
+}
+
+export function padButtonGlyph(i: number, kind: PadKind): string {
+  const map = kind === 'xbox' ? XBOX_GLYPHS : PS_GLYPHS
+  return map[i] ?? `T${i}`
+}
+
 export function firstPad(): Gamepad | null {
   try {
     const pads = navigator.getGamepads ? navigator.getGamepads() : []

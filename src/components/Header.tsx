@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore, appStore, DEFAULT_KEYBINDS } from '@/store/useAppStore'
-import { padButtonName, waitPadButton, DEFAULT_PADBINDS, type PadAction } from '@/lib/gamepad'
+import { waitPadButton, firstPad, padKind, type PadAction } from '@/lib/gamepad'
+import { PadButton } from '@/components/PadButton'
 
 function GearIcon() {
   return (
@@ -21,16 +22,13 @@ export function Header() {
   const [padCapture, setPadCapture] = useState<PadAction | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const t = (id: string, en: string) => (lang==='id' ? id : en)
+  const kind = padKind(padOn ? firstPad()?.id : undefined)
 
   useEffect(() => {
     if (!open) return
-    const onDoc = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) { setOpen(false); setCapture(null) }
-    }
-    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') { setOpen(false); setCapture(null) } }
-    document.addEventListener('mousedown', onDoc)
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') { setOpen(false); setCapture(null); setPadCapture(null) } }
     document.addEventListener('keydown', onEsc)
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onEsc) }
+    return () => { document.removeEventListener('keydown', onEsc) }
   }, [open ])
 
   useEffect(() => {
@@ -58,7 +56,8 @@ export function Header() {
     return () => window.removeEventListener('keydown', onKey, true)
   }, [capture])
   return (
-    <div className="h-16 flex items-center justify-between px-4 bg-flow-900 border-b border-flow-600 select-none shrink-0" style={{ WebkitAppRegion: 'drag' } as any}>
+    <div className="shrink-0 select-none">
+    <div className="h-16 flex items-center justify-between px-4 bg-flow-900 border-b border-flow-600" style={{ WebkitAppRegion: 'drag' } as any}>
       <div className="flex items-center gap-2.5 min-w-0">
         <img
           src="logo.png"
@@ -71,92 +70,20 @@ export function Header() {
         />
         <div className="leading-tight min-w-0">
           <div className="font-mono text-xl font-bold text-white tracking-tight truncate">
-            OhMyFlow <span className="text-sm font-normal text-zinc-500">v1.1</span>
+            OhMyFlow <span className="text-sm font-normal text-zinc-500">v1.2</span>
           </div>
           <div className="font-mono text-xs text-zinc-500 truncate">Culling made simple.</div>
         </div>
       </div>
       <div className="flex items-center gap-1 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
-        <div className="relative mr-1" ref={panelRef}>
-          <button
-            onClick={()=> { setOpen(o=>!o); setCapture(null) }}
-            aria-label={t('Pengaturan', 'Settings')}
-            aria-expanded={open}
-            className="flex items-center justify-center rounded-sm border border-flow-600 px-2 py-1.5 text-zinc-400 transition hover:border-zinc-500 hover:text-white"
-          >
-            <GearIcon />
-          </button>
-          {open && (
-            <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded border border-flow-600 bg-flow-800 p-3 shadow-xl">
-              <div className="mb-2 font-mono text-[11px] font-bold tracking-widest text-zinc-300">
-                {t('[ KEYBIND ]', '[ KEYBINDS ]')}
-              </div>
-              {(['picks','maybe','rejects'] as const).map(act => (
-                <div key={act} className="mb-1.5 flex items-center justify-between gap-2">
-                  <span className="font-mono text-[11px] text-zinc-400">
-                    {act === 'picks' ? t('Picks', 'Picks') : act === 'maybe' ? t('Maybe', 'Maybe') : t('Reject', 'Reject')}
-                  </span>
-                  <button
-                    onClick={()=> setCapture(act)}
-                    className={`min-w-[3rem] rounded-sm border px-2 py-1 text-center font-mono text-[11px] font-bold transition ${capture === act ? 'border-emerald-400 text-emerald-300' : 'border-flow-600 text-white hover:border-zinc-400'}`}
-                  >
-                    {capture === act ? '…' : binds[act]}
-                  </button>
-                </div>
-              ))}
-              {capture && (
-                <div className="mb-1.5 font-mono text-[10px] text-emerald-300">
-                  {t('Tekan tombol baru… (Esc batal)', 'Press a new key… (Esc cancels)')}
-                </div>
-              )}
-              <button
-                onClick={()=> { appStore.resetKeybinds(); setCapture(null) }}
-                className="mt-1 w-full rounded-sm border border-flow-600 px-2 py-1 font-mono text-[10px] font-bold text-zinc-400 transition hover:border-zinc-400 hover:text-white"
-              >
-                {t(`[ Reset → ${DEFAULT_KEYBINDS.picks}/${DEFAULT_KEYBINDS.maybe}/${DEFAULT_KEYBINDS.rejects} ]`, `[ Reset → ${DEFAULT_KEYBINDS.picks}/${DEFAULT_KEYBINDS.maybe}/${DEFAULT_KEYBINDS.rejects} ]`)}
-              </button>
-              <div className="mb-2 mt-3 border-t border-flow-700 pt-2 font-mono text-[11px] font-bold tracking-widest text-zinc-300">
-                {t('[ CONTROLLER ]', '[ CONTROLLER ]')}{' '}
-                <span className={padOn ? 'text-emerald-400' : 'text-zinc-600'}>
-                  {padOn ? t('konek', 'connected') : t('tak ada', 'none')}
-                </span>
-              </div>
-              {!padOn && (
-                <div className="mb-1.5 font-mono text-[10px] text-zinc-500">
-                  {t('Colok controller + tekan tombol apa saja.', 'Plug in a controller + press any button.')}
-                </div>
-              )}
-              {(['prev','next','picks','maybe','rejects'] as const).map(act => (
-                <div key={act} className="mb-1.5 flex items-center justify-between gap-2">
-                  <span className="font-mono text-[11px] text-zinc-400">
-                    {act === 'prev' ? t('← Sblm (L1)', '← Prev (L1)')
-                      : act === 'next' ? t('Brkt → (R1)', 'Next → (R1)')
-                      : act === 'picks' ? t('Picks (Kotak)', 'Picks (Square)')
-                      : act === 'maybe' ? t('Maybe (Segitiga)', 'Maybe (Triangle)')
-                      : t('Reject (Bulat)', 'Reject (Circle)')}
-                  </span>
-                  <button
-                    onClick={()=> setPadCapture(act)}
-                    className={`min-w-[4.5rem] rounded-sm border px-2 py-1 text-center font-mono text-[11px] font-bold transition ${padCapture === act ? 'border-emerald-400 text-emerald-300' : 'border-flow-600 text-white hover:border-zinc-400'}`}
-                  >
-                    {padCapture === act ? '…' : padButtonName(padbinds[act])}
-                  </button>
-                </div>
-              ))}
-              {padCapture && (
-                <div className="mb-1.5 font-mono text-[10px] text-emerald-300">
-                  {t('Tekan tombol controller… (10 dtk)', 'Press controller button… (10s)')}
-                </div>
-              )}
-              <button
-                onClick={()=> { appStore.resetPadbinds(); setPadCapture(null) }}
-                className="mt-1 w-full rounded-sm border border-flow-600 px-2 py-1 font-mono text-[10px] font-bold text-zinc-400 transition hover:border-zinc-400 hover:text-white"
-              >
-                {t(`[ Reset → ${padButtonName(DEFAULT_PADBINDS.prev)}/${padButtonName(DEFAULT_PADBINDS.next)}/${padButtonName(DEFAULT_PADBINDS.picks)}/${padButtonName(DEFAULT_PADBINDS.maybe)}/${padButtonName(DEFAULT_PADBINDS.rejects)} ]`, `[ Reset → ${padButtonName(DEFAULT_PADBINDS.prev)}/${padButtonName(DEFAULT_PADBINDS.next)}/${padButtonName(DEFAULT_PADBINDS.picks)}/${padButtonName(DEFAULT_PADBINDS.maybe)}/${padButtonName(DEFAULT_PADBINDS.rejects)} ]`)}
-              </button>
-            </div>
-          )}
-        </div>
+        <button
+          onClick={()=> { setOpen(o=>!o); setCapture(null); setPadCapture(null) }}
+          aria-label={t('Pengaturan', 'Settings')}
+          aria-expanded={open}
+          className="mr-1 flex items-center justify-center rounded-sm border border-flow-600 px-2 py-1.5 text-zinc-400 transition hover:border-zinc-500 hover:text-white"
+        >
+          <GearIcon />
+        </button>
         <button
           onClick={()=> appStore.setLanguage(lang==='id'?'en':'id')}
           aria-label={lang==='id' ? 'Switch to English' : 'Ganti ke Bahasa Indonesia'}
@@ -186,6 +113,81 @@ export function Header() {
           ✕
         </button>
       </div>
+    </div>
+    {open && (
+      <div ref={panelRef} className="border-b border-flow-600 bg-flow-900 px-4 py-3">
+        <div className="mx-auto grid max-w-3xl gap-4 sm:grid-cols-2">
+          <fieldset className="rounded border border-flow-600 p-3">
+            <legend className="px-1 font-mono text-[11px] font-bold tracking-widest text-zinc-300">
+              {t('[ KEYBOARD ]', '[ KEYBOARD ]')}
+            </legend>
+            {(['picks','maybe','rejects'] as const).map(act => (
+              <div key={act} className="mb-1.5 flex items-center justify-between gap-2">
+                <span className={`h-2 w-2 rounded-full ${act === 'picks' ? 'bg-emerald-400' : act === 'maybe' ? 'bg-amber-300' : 'bg-red-400'}`} aria-hidden="true" />
+                <span className="flex-1 font-mono text-[11px] text-zinc-300">
+                  {act === 'picks' ? t('Picks', 'Picks') : act === 'maybe' ? t('Maybe', 'Maybe') : t('Reject', 'Reject')}
+                </span>
+                <button
+                  onClick={()=> setCapture(act)}
+                  className={`min-w-[3rem] rounded-sm border px-2 py-1 text-center font-mono text-[11px] font-bold transition ${capture === act ? 'border-emerald-400 text-emerald-300' : 'border-flow-700 text-white hover:border-zinc-400'}`}
+                >
+                  {capture === act ? '…' : binds[act]}
+                </button>
+              </div>
+            ))}
+            {capture
+              ? <div className="font-mono text-[10px] text-emerald-300">{t('Tekan tombol baru… (Esc batal)', 'Press a new key… (Esc cancels)')}</div>
+              : <button
+                  onClick={()=> { appStore.resetKeybinds(); setCapture(null) }}
+                  className="mt-1 font-mono text-[10px] font-bold text-zinc-500 transition hover:text-white"
+                >
+                  {t(`[ Reset → ${DEFAULT_KEYBINDS.picks}/${DEFAULT_KEYBINDS.maybe}/${DEFAULT_KEYBINDS.rejects} ]`, `[ Reset → ${DEFAULT_KEYBINDS.picks}/${DEFAULT_KEYBINDS.maybe}/${DEFAULT_KEYBINDS.rejects} ]`)}
+                </button>}
+          </fieldset>
+          <fieldset className="rounded border border-flow-600 p-3">
+            <legend className="px-1 font-mono text-[11px] font-bold tracking-widest text-zinc-300">
+              {t('[ CONTROLLER ]', '[ CONTROLLER ]')}{' '}
+              <span className={padOn ? 'text-emerald-400' : 'text-zinc-600'}>
+                {padOn ? '●' : '○'}
+              </span>
+            </legend>
+            {!padOn && (
+              <div className="mb-1.5 font-mono text-[10px] text-zinc-500">
+                {t('Colok controller + tekan tombol apa saja.', 'Plug in a controller + press any button.')}
+              </div>
+            )}
+            {(['prev','next','picks','maybe','rejects'] as const).map(act => (
+              <div key={act} className="mb-1.5 flex items-center justify-between gap-2">
+                <span className="flex-1 font-mono text-[11px] text-zinc-300">
+                  {act === 'prev' ? t('← Sebelumnya', '← Previous')
+                    : act === 'next' ? t('Berikutnya →', 'Next →')
+                    : act === 'picks' ? t('Picks', 'Picks')
+                    : act === 'maybe' ? t('Maybe', 'Maybe')
+                    : t('Reject', 'Reject')}
+                </span>
+                <button
+                  onClick={()=> setPadCapture(act)}
+                  aria-label={act}
+                  className="transition hover:opacity-80"
+                >
+                  {padCapture === act
+                    ? <span className="inline-flex min-w-[2rem] items-center justify-center rounded-sm border border-emerald-400 px-1.5 py-0.5 font-mono text-[11px] font-bold text-emerald-300">…</span>
+                    : <PadButton index={padbinds[act]} kind={kind} />}
+                </button>
+              </div>
+            ))}
+            {padCapture
+              ? <div className="font-mono text-[10px] text-emerald-300">{t('Tekan tombol controller… (10 dtk)', 'Press controller button… (10s)')}</div>
+              : <button
+                  onClick={()=> { appStore.resetPadbinds(); setPadCapture(null) }}
+                  className="mt-1 font-mono text-[10px] font-bold text-zinc-500 transition hover:text-white"
+                >
+                  {t('[ Reset bawaan ]', '[ Reset defaults ]')}
+                </button>}
+          </fieldset>
+        </div>
+      </div>
+    )}
     </div>
   )
 }

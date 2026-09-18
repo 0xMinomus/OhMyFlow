@@ -1,6 +1,6 @@
 {
   "name": "ohmyflow",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "MyFlow by DOSS Clone - AI Photo Culler 100% Local, Native Windows",
   "author": "OhMyFlow",
   "main": "dist-electron/main.js",
