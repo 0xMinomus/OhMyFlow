@@ -154,8 +154,10 @@ export function PhotoGrid() {
 
   useEffect(() => { setPage(0) }, [cat])
 
-  if (photos.length===0) return null
-  if (!stats) return null
+  // Modal harus tetap hidup walau semua foto sudah dipindah (agar kartu
+  // sukses terlihat): jangan ikut return null di bawah.
+  const moveModal = <MoveModal open={moveOpen} onClose={()=> setMoveOpen(false)} />
+  if (photos.length===0 || !stats) return (<>{moveModal}</>)
 
   const tabTone = (c: 'all' | 'picks' | 'maybe' | 'rejects', active: boolean) => {
     if (!active) return 'text-zinc-500 border-flow-600 hover:text-white hover:border-zinc-500'
@@ -232,7 +234,7 @@ export function PhotoGrid() {
           </div>
         )}
       </Fieldset>
-      <MoveModal open={moveOpen} onClose={()=> setMoveOpen(false)} />
+      {moveModal}
       {lightIds && lightId && (
         <Lightbox
           ids={lightIds}
