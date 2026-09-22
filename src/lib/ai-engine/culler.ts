@@ -1,5 +1,5 @@
 import type { PhotoItem, Sensitivity, CullCategory } from '@/types'
-import { analyzeOne, clearPipelineCache, decodeOnce, V2_SUBJECT, V2_BURST_RANK, type PipelineFeatures } from './pipeline'
+import { analyzeOne, clearPipelineCache, decodeOnce, V2_SUBJECT, V2_BURST_RANK, V2_HIEYE, type PipelineFeatures } from './pipeline'
 import { groupDuplicates, hammingDistanceLimited } from './duplicate'
 import { codesFor } from './reasons'
 import { V2_ONNX, V2_PASS2, detectFacesONNX } from '../ml/face-onnx'
@@ -153,6 +153,31 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
           ;(item as any).pass2 = null
         }
       }
+      // GT-2026-09: eye second-pass resolusi tinggi (High + wajah + unknown).
+      // Pupil kecil tak teresolusi di 512 (merem = unknown) vs teresolusi di 768
+      // (terbuka, hits≥5). Upgrade-only + catat pupilHits; gagal = diam.
+      // Harness: lewat opts.analyze (sharp) — terukur identik dengan produksi.
+      if (V2_HIEYE && opts.mode === 'high' && face.hasFace && face.eyesState === 'unknown') {
+        try {
+          const hi = opts.analyze
+            ? await opts.analyze(src, 768)
+            : await analyzeOne(src, 768)
+          const hf = hi?.face
+          if (hf && hf.hasFace) {
+            face.pupilHits = hf.pupilHits ?? face.pupilHits
+            if (hf.eyesState === 'open' && hf.eyesClosedProbability <= 0.2) {
+              face.eyesState = 'open'
+              face.eyesClosedProbability = hf.eyesClosedProbability
+            } else if (hf.eyesState === 'closed' && hf.eyesClosedProbability > 0.6) {
+              face.eyesState = 'closed'
+              face.eyesClosedProbability = hf.eyesClosedProbability
+            }
+          }
+        } catch {
+          ;(item as any).eyeHi = null
+        }
+      }
+      ;(item as any).pupilHits = face.pupilHits ?? 0
 
       // Keputusan mata tertutup memakai ambang probabilitas per mode (high paling tegas).
       // WAJIB state 'closed': 'unknown' (pupil tak terbaca) tidak boleh vonis mata —
@@ -222,7 +247,12 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
       // Pita 'Blur' = PERSIS syarat hard-rule di bawah: yang di-reject pasti beralasan.
       // Mode objek dikecualikan: kemulusan di sana = fitur, bukan cacat.
       const blurProven = sh.confidence > 0.5 || sh.edge < 45
-      const blurWillReject = focus < preset.hardBlurBelow && !smoothObject && !eyesClearlyOpen
+      // GT-2026-09: mata tak-terbukti-terbuka (unknown) = ragu → plafon Maybe,
+      // bukan vonis keras. Selisih 4 di bawah ambang blur = zona ragu.
+      const blurDoubt = face.hasFace && face.eyesState === 'unknown'
+      const blurFloor = preset.hardBlurBelow - (blurDoubt ? 4 : 0)
+      ;(item as any).blurFloor = blurFloor
+      const blurWillReject = focus < blurFloor && !smoothObject && !eyesClearlyOpen
       if (blurWillReject) {
         reasons.push('Blur / tidak fokus'); reasonsEn.push('Blurry / out of focus')
       } else if (!smoothObject && blurProven && !sh.isFlat && focus < 65) {
@@ -301,6 +331,8 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
       // Yang aktif: netral 72 (tanpa reward) + critical subject gate di bawah.
       if (v2s && face.hasFace && subjFocus !== null && subjFocus < 55 && !smoothObject) v2cap = 'maybe'
       if (v2s && face.hasFace && subjFocus !== null && subjFocus < 35 && face.faceConfidence > 0.6 && !smoothObject) v2cap = 'reject'
+      // GT-2026-09: plafon Maybe untuk unknown-tanpa-pupil DITAHAN (bleed 35
+      // H-Pick vs gain 13; Maybe 41% > target 10–25%). Lihat MEMORY §6b.
       ;(item as any).v2cap = v2cap
       // confidence keseluruhan untuk UI (mis. tampilkan "perlu cek manual" jika rendah)
       item.confidence = Math.round(((sh.confidence + ae.confidence + (face.hasFace ? face.faceConfidence : 0.7)) / 3) * 100) / 100
@@ -393,9 +425,10 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
       cat = 'rejects'
     } else if ((item as any).accidental) {
       cat = opts.mode === 'fast' ? 'maybe' : 'rejects' // frame kosong total
-    } else if (focus < preset.hardBlurBelow && !smoothObject && !(item as any).eyesOpenProtect
+    } else if (focus < ((item as any).blurFloor ?? preset.hardBlurBelow) && !smoothObject && !(item as any).eyesOpenProtect
       && !(v2sCap && preset.hardBlurBelow - focus <= 2 && (item.exposure ?? 0) >= 90 && (item as any).meanLum >= 100)) {
       cat = 'rejects' // fokus hancur pada konten bertekstur (objek mulus dinilai tanpa blur).
+      ;(item as any).blurReject = true // GT-2026-09: penanda vonis-blur (proteksi best-of-burst)
       // Lunak-ringkas tapi TERANG (expo≥90, lum≥100, mis. IMG_6175 f59) = ambiguitas
       // ringan → jatuh ke threshold (biasanya Maybe), bukan vonis keras.
     } else if (preset.exposureHardReject && (item as any).meanLum !== undefined && (item as any).meanLum < 22 && clippedLo > 35) {
@@ -438,6 +471,16 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
     }
     else if (s >= preset.rejectBelow) cat = 'maybe'
     else cat = 'rejects'
+
+    // GT-2026-09 (High): terbaik di burst-nya (clusterRank 0, grup >1) yang gugur
+    // HANYA karena blur = momen terbaik yang lunak → Maybe (bisa direview),
+    // bukan Rejects. Tak berlaku bila ada vonis subjek-kritis (v2cap reject).
+    if (v2sCap && (item as any).clusterRank === 0 && (item as any).clusterSize > 1 &&
+      cat === 'rejects' && (item as any).blurReject === true && (item as any).v2cap !== 'reject') {
+      cat = 'maybe'
+      item.reasons = [...(item.reasons || []).filter((r) => r !== 'Blur / tidak fokus'), 'Terbaik di burst-nya tapi lunak']
+      item.reasonsEn = [...(item.reasonsEn || []).filter((r) => r !== 'Blurry / out of focus'), 'Best in burst but soft']
+    }
 
     // Pengaman terakhir: confidence sangat rendah → jangan reject, taruh Maybe.
     // Lantainya diturunkan per mode agar yang berani (high) jarang disoin.

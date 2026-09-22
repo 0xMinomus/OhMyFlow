@@ -32,6 +32,8 @@ export const V2_ANALYSIS_IMAGE = true
 export const V2_SUBJECT = true
 // Flag Fase 4: ranking burst + redundant reject (High saja).
 export const V2_BURST_RANK = true
+// GT-2026-09: eye second-pass resolusi tinggi (High + wajah + unknown saja).
+export const V2_HIEYE = true
 // Resolusi analysis image per mode (§7 new-architecture; High aktif dulu).
 export const ANALYSIS_IMAGE_SIZE = { fast: 640, balanced: 896, high: 1280 } as const
 

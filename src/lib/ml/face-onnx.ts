@@ -112,15 +112,16 @@ class UltraFaceDetector implements FaceDetector {
       const boxes = out[names.find((n) => /box|bbox|location/i.test(n)) ?? names[1]].data as Float32Array
       const raw: FaceDetection[] = []
       const n = scores.length / 2
-      const xScale = w / IN_W, yScale = h / IN_H
       for (let i = 0; i < n; i++) {
         const p = scores[i * 2 + 1]
         if (p < SCORE_T) continue
-        // Box model relatif input 320x240 → petakan ke koordinat foto.
-        const bx0 = Math.max(0, boxes[i * 4] * xScale) / w
-        const by0 = Math.max(0, boxes[i * 4 + 1] * yScale) / h
-        const bx1 = Math.min(w, boxes[i * 4 + 2] * xScale) / w
-        const by1 = Math.min(h, boxes[i * 4 + 3] * yScale) / h
+        // Box model SUDAH ternormalisasi 0-1 (BUKAN piksel 320x240!) —
+        // terbukti visual: mapping piksel menempatkan box selebar ~0.06%
+        // frame di tempat acak (ultra-box-fix.jpg). Langsung relatif.
+        const bx0 = Math.max(0, boxes[i * 4])
+        const by0 = Math.max(0, boxes[i * 4 + 1])
+        const bx1 = Math.min(1, boxes[i * 4 + 2])
+        const by1 = Math.min(1, boxes[i * 4 + 3])
         raw.push({ box: { x: bx0, y: by0, w: Math.max(0, bx1 - bx0), h: Math.max(0, by1 - by0) }, score: p })
       }
       return nms(raw)
