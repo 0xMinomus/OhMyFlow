@@ -34,11 +34,11 @@ function useImageDims(item: PhotoItem): string {
 function VerdictBadge({ cat }: { cat: string }) {
   const label = cat==='picks' ? 'PICKS' : cat==='maybe' ? 'MAYBE' : 'REJECTS'
   const tone = cat==='picks'
-    ? 'bg-emerald-400 text-black'
+    ? 'w7-badge-pick'
     : cat==='maybe'
-      ? 'bg-amber-300 text-black'
-      : 'bg-red-400 text-black'
-  return <span className={`rounded-sm px-1.5 py-px text-[10px] font-bold tracking-wide ${tone}`}>{label}</span>
+      ? 'w7-badge-maybe'
+      : 'w7-badge-reject'
+  return <span className={`w7-badge px-1.5 py-px text-[10px] font-bold tracking-wide ${tone}`}>{label}</span>
 }
 
 function Chevron({ dir }: { dir: 'left' | 'right' }) {
@@ -71,55 +71,55 @@ function PhotoCard({ p, lang, index, onOpen }: { p: PhotoItem; lang: 'id' | 'en'
   const num = String(index + 1).padStart(3, '0')
 
   return (
-    <div className="group rounded-sm overflow-hidden bg-flow-800 border border-flow-700 hover:border-zinc-500 transition flex flex-col">
-      <div className="flex items-center gap-1.5 px-2 h-8 border-b border-flow-700 shrink-0">
-        <span className="font-mono text-[10px] tabular-nums text-zinc-500">{num}</span>
+    <div className={`w7-card group flex flex-col ${p.category==='picks' ? 'w7-card-picks' : p.category==='maybe' ? 'w7-card-maybe' : p.category==='rejects' ? 'w7-card-reject' : ''}`}>
+      <div className="w7-card-head flex h-8 shrink-0 items-center gap-1.5 px-2">
+        <span className="w7-muted w7-num font-sans text-[10px]">{num}</span>
         <VerdictBadge cat={p.category || 'maybe'} />
-        <span className="ml-auto rounded-sm border border-white/10 bg-black/60 px-1.5 py-px font-mono text-[10px] tabular-nums text-zinc-300">{p.score ?? 0}</span>
+        <span className="w7-badge w7-num ml-auto px-1.5 py-px font-sans text-[10px]">{p.score ?? 0}</span>
       </div>
-      <div className="aspect-[16/8.5] bg-flow-900 relative overflow-hidden">
+      <div className="relative aspect-[16/8.5] overflow-hidden bg-[#dbe5ee]">
         <div
           onClick={onOpen}
           onKeyDown={(e)=> { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
           tabIndex={0}
           role="button"
           aria-label={(lang === 'id' ? 'Perbesar ' : 'Enlarge ') + p.fileName}
-          className="absolute inset-0 cursor-zoom-in focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/70 focus-visible:outline-offset-[-2px]"
+          className="absolute inset-0 cursor-zoom-in"
         >
           <LazyThumb item={p} className="w-full h-full object-cover" />
         </div>
         {(p.isPaired || (p.isRaw && !p.thumbUrl && !p.dataUrl)) && (
-          <span className="absolute bottom-1.5 right-1.5 rounded-sm bg-black/70 px-1.5 py-px text-[9px] font-bold text-zinc-300 border border-white/10 pointer-events-none">
+          <span className="w7-badge pointer-events-none absolute bottom-1.5 right-1.5 px-1.5 py-px font-sans text-[9px] font-bold">
             {p.isPaired ? 'RAW+JPG' : 'RAW'}
           </span>
         )}
-        <div className="absolute bottom-1.5 left-1.5 right-1.5 hidden gap-1 group-hover:flex group-focus-within:flex">
-          <button disabled={p.category==='picks'} onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'picks') }} className="flex-1 rounded-sm bg-emerald-400 py-1 font-mono text-[10px] font-bold text-black disabled:cursor-not-allowed disabled:opacity-40">Picks</button>
-          <button disabled={p.category==='maybe'} onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'maybe') }} className="flex-1 rounded-sm bg-amber-300 py-1 font-mono text-[10px] font-bold text-black disabled:cursor-not-allowed disabled:opacity-40">Maybe</button>
-          <button disabled={p.category==='rejects'} onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'rejects') }} className="flex-1 rounded-sm bg-red-400 py-1 font-mono text-[10px] font-bold text-black disabled:cursor-not-allowed disabled:opacity-40">Reject</button>
+        <div className="absolute inset-x-1.5 bottom-1.5 hidden gap-1 group-hover:flex group-focus-within:flex">
+          <button disabled={p.category==='picks'} onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'picks') }} className="w7-btn w7-btn-green flex-1 py-1 font-sans text-[10px] font-bold disabled:opacity-40">Picks</button>
+          <button disabled={p.category==='maybe'} onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'maybe') }} className="w7-btn w7-btn-amber flex-1 py-1 font-sans text-[10px] font-bold disabled:opacity-40">Maybe</button>
+          <button disabled={p.category==='rejects'} onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'rejects') }} className="w7-btn w7-btn-red flex-1 py-1 font-sans text-[10px] font-bold disabled:opacity-40">Reject</button>
         </div>
       </div>
-      <div className="px-2 py-1.5 flex flex-col">
+      <div className="flex flex-col bg-white px-2 py-1.5">
         <div className="flex items-center gap-1.5">
-          <div className="flex-1 truncate font-mono text-[11px] text-zinc-200" title={p.fileName}>{p.fileName}</div>
-          <span className="shrink-0 font-mono text-[10px] tabular-nums text-zinc-500">{dims || '—'}</span>
+          <div className="flex-1 truncate font-sans text-[11px]" title={p.fileName}>{p.fileName}</div>
+          <span className="w7-muted w7-num shrink-0 font-sans text-[10px]">{dims || '—'}</span>
           <button
             onClick={()=> window.ohmyflow.showInFolder(p.filePath)}
             aria-label={t('Tampilkan di folder', 'Show in folder')}
             title={t('Tampilkan di folder', 'Show in folder')}
-            className="shrink-0 text-zinc-600 opacity-0 transition hover:text-white group-hover:opacity-100 focus-visible:opacity-100"
+            className="shrink-0 text-[#5b6b7a] opacity-0 hover:text-[#1e2c3a] group-hover:opacity-100 focus-visible:opacity-100"
           >
             <ExternalIcon />
           </button>
         </div>
-        <div className="truncate font-mono text-[10px] text-zinc-500" title={bits.join(' · ')}>
+        <div className="w7-muted truncate font-sans text-[10px]" title={bits.join(' · ')}>
           {bits.length > 0 ? (
             <>
-              {lowConf && <span className="font-bold text-amber-300">{bits[0]}</span>}
+              {lowConf && <span className="font-bold text-[#8a6d00]">{bits[0]}</span>}
               {lowConf && bits.length > 1 && <span> · </span>}
               {(lowConf ? bits.slice(1) : bits).join(' · ')}
             </>
-          ) : <span className="text-zinc-600">-</span>}
+          ) : <span className="w7-faint">-</span>}
         </div>
       </div>
     </div>
@@ -160,18 +160,16 @@ export function PhotoGrid() {
   if (photos.length===0 || !stats) return (<>{moveModal}</>)
 
   const tabTone = (c: 'all' | 'picks' | 'maybe' | 'rejects', active: boolean) => {
-    if (!active) return 'text-zinc-500 border-flow-600 hover:text-white hover:border-zinc-500'
-    if (c === 'picks') return 'text-emerald-300 border-emerald-500'
-    if (c === 'maybe') return 'text-amber-300 border-amber-500'
-    if (c === 'rejects') return 'text-red-300 border-red-500'
-    return 'text-white border-white'
+    const catCls = c === 'picks' ? ' w7-tab-cat-picks' : c === 'maybe' ? ' w7-tab-cat-maybe' : c === 'rejects' ? ' w7-tab-cat-reject' : ''
+    if (!active) return 'w7-tab' + catCls
+    return 'w7-tab w7-tab-active' + catCls
   }
 
   return (
     <>
-      <Fieldset num="03" title={t('Hasil', 'Results')}>
-        <div className="flex items-center justify-between gap-2 flex-wrap px-3 min-h-[54px] py-2">
-          <div className="flex items-center gap-1.5 flex-wrap" role="tablist">
+      <Fieldset num="03" title={t('Hasil', 'Results')} className="flex flex-1 flex-col overflow-hidden min-h-0">
+        <div className="w7-tabs flex flex-wrap items-center justify-between gap-2 px-3 py-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-1.5" role="tablist">
             {(['all','picks','maybe','rejects'] as const).map(c=>{
               const active = cat===c
               const label = c==='all' ? t('Semua', 'All') : c==='picks' ? 'Picks' : c==='maybe' ? 'Maybe' : 'Rejects'
@@ -181,9 +179,9 @@ export function PhotoGrid() {
                   role="tab"
                   aria-selected={active}
                   onClick={()=>appStore.setCategory(c)}
-                  className={`rounded-sm border px-2.5 py-1.5 font-mono text-[11px] font-bold transition ${tabTone(c, active)}`}
+                  className={`px-2.5 py-1.5 font-sans text-[11px] font-bold ${tabTone(c, active)}`}
                 >
-                  [ {label} <span className="tabular-nums">{counts[c]}</span> ]
+                  [ {label} <span className="w7-num">{counts[c]}</span> ]
                 </button>
               )
             })}
@@ -191,16 +189,16 @@ export function PhotoGrid() {
           <div className="flex items-center gap-2">
             <button
               onClick={()=> setMoveOpen(true)}
-              className="rounded-sm border border-flow-500 px-3.5 py-1.5 font-mono text-[11px] font-bold text-zinc-200 transition hover:border-zinc-400 hover:text-white"
+              className="w7-btn px-3.5 py-1.5 font-sans text-[11px] font-bold"
             >
-              {t('[ Pindah File ]', '[ Move Files ]')}
+              {t('Pindah File', 'Move Files')}
             </button>
             <ExportButton lang={lang} />
           </div>
         </div>
-        <div className="border-t border-flow-700" />
-        <div className="p-3">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 max-h-[60vh] overflow-auto pr-0.5">
+        <div className="w7-separator shrink-0" />
+        <div className="flex-1 min-h-0 overflow-y-auto p-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 pr-0.5">
             {pageItems.map((p, i)=> (
               <PhotoCard
                 key={p.id}
@@ -213,21 +211,21 @@ export function PhotoGrid() {
           </div>
         </div>
         {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-3 px-3 pb-3">
+          <div className="w7-pager flex shrink-0 items-center justify-center gap-3 px-3 pb-3 pt-3">
             <button
               disabled={safePage===0}
               onClick={()=>setPage(safePage-1)}
               aria-label={t('Halaman sebelumnya', 'Previous page')}
-              className="rounded-sm border border-flow-600 p-1.5 text-zinc-300 transition hover:border-zinc-400 disabled:opacity-40"
+              className="w7-btn p-1.5 disabled:opacity-40"
             >
               <Chevron dir="left" />
             </button>
-            <span className="font-mono text-[11px] tabular-nums text-zinc-500">{safePage+1} / {totalPages}</span>
+            <span className="w7-muted w7-num font-sans text-[11px]">{safePage+1} / {totalPages}</span>
             <button
               disabled={safePage>=totalPages-1}
               onClick={()=>setPage(safePage+1)}
               aria-label={t('Halaman berikutnya', 'Next page')}
-              className="rounded-sm border border-flow-600 p-1.5 text-zinc-300 transition hover:border-zinc-400 disabled:opacity-40"
+              className="w7-btn p-1.5 disabled:opacity-40"
             >
               <Chevron dir="right" />
             </button>
@@ -261,8 +259,8 @@ function ExportButton({ lang }: { lang: 'id' | 'en' }) {
       : `Done! ${res.ok}/${res.total} XMP files written. Open the folder in Lightroom to see ratings.`)
   }
   return (
-    <button onClick={handle} className="rounded-sm border border-zinc-400 px-3.5 py-1.5 font-mono text-[11px] font-bold text-white transition hover:bg-white hover:text-black">
-      {lang==='id' ? '[ Ekspor XMP ]' : '[ Export XMP ]'}
+    <button onClick={handle} className="w7-btn w7-btn-primary px-3.5 py-1.5 font-sans text-[11px] font-bold">
+      {lang==='id' ? 'Ekspor XMP' : 'Export XMP'}
     </button>
   )
 }

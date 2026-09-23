@@ -1,3 +1,5 @@
+import { newTrace, type EngineTrace } from '../ai-engine-v2/diagnostics/trace'
+import { technicalEvidence } from '../ai-engine-v2/technical/evidence'
 import type { PhotoItem, Sensitivity, CullCategory } from '@/types'
 import { analyzeOne, clearPipelineCache, decodeOnce, V2_SUBJECT, V2_BURST_RANK, V2_HIEYE, type PipelineFeatures } from './pipeline'
 import { groupDuplicates, hammingDistanceLimited } from './duplicate'
@@ -6,6 +8,7 @@ import { V2_ONNX, V2_PASS2, detectFacesONNX } from '../ml/face-onnx'
 import { refineEyesWithROI } from '../ml/eye-roi'
 
 export interface CullOptions {
+  onTrace?: (trace: EngineTrace) => void
   mode: Sensitivity
   onProgress?: (done: number, total: number, current: PhotoItem) => void
   shouldCancel?: () => boolean
@@ -14,38 +17,19 @@ export interface CullOptions {
   analyze?: (src: string, size: number) => Promise<PipelineFeatures | null>
 }
 
-interface ModePreset {
-  analysisSize: number
-  batchSize: number
-  sharpWeight: number
-  faceWeight: number
-  aestheticWeight: number
-  compWeight: number
-  duplicateThreshold: number
-  dupPenalty: number
-  picksAt: number
-  rejectBelow: number
-  hardBlurBelow: number
-  picksFocusMin: number
-  blownRejectAt: number
-  confRejectFloor: number
-  darkRejectAt: number // exposure ≤ ini + lum rendah = rejects (0 = mati; high saja)
-  eyeThreshold: number
-  exposureHardReject: boolean
-  compositionHardReject: boolean
-}
-
-// Fast = sortir awal (hanya yang jelas gagal dibuang, sisanya Maybe).
-// Balanced = harian, objektif. High = seleksi akhir (paling berani me-reject).
-export const PRESETS: Record<Sensitivity, ModePreset> = {
-  fast:     { analysisSize: 256, batchSize: 8, sharpWeight: 0.37, faceWeight: 0.27, aestheticWeight: 0.26, compWeight: 0.10, duplicateThreshold: 9, dupPenalty: 8,  picksAt: 75, rejectBelow: 40, hardBlurBelow: 45, picksFocusMin: 60, blownRejectAt: 18, confRejectFloor: 0.45, darkRejectAt: 0, eyeThreshold: 0.70, exposureHardReject: false, compositionHardReject: false },
-  balanced: { analysisSize: 384, batchSize: 6, sharpWeight: 0.34, faceWeight: 0.26, aestheticWeight: 0.25, compWeight: 0.15, duplicateThreshold: 7, dupPenalty: 10, picksAt: 70, rejectBelow: 45, hardBlurBelow: 55, picksFocusMin: 60, blownRejectAt: 14, confRejectFloor: 0.32, darkRejectAt: 0, eyeThreshold: 0.60, exposureHardReject: true,  compositionHardReject: false },
-  high:     { analysisSize: 512, batchSize: 4, sharpWeight: 0.32, faceWeight: 0.24, aestheticWeight: 0.24, compWeight: 0.20, duplicateThreshold: 5, dupPenalty: 14, picksAt: 72, rejectBelow: 48, hardBlurBelow: 60, picksFocusMin: 60, blownRejectAt: 12, confRejectFloor: 0.28, darkRejectAt: 15, eyeThreshold: 0.50, exposureHardReject: true,  compositionHardReject: true },
-}
+import { PRESETS } from './presets'
+import { classifyLegacy } from './legacy-policy'
+export { PRESETS } from './presets'
 
 export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise<PhotoItem[]> {
   const preset = PRESETS[opts.mode] || PRESETS.balanced
-  const results: PhotoItem[] = items.map((i) => ({ ...i }))
+  // Reanalysis starts from photo input, never from cached engine evidence.
+  const results: PhotoItem[] = items.map(i => ({
+    id: i.id, fileName: i.fileName, filePath: i.filePath, pairedPath: i.pairedPath,
+    previewPath: i.previewPath, isPaired: i.isPaired, isRaw: i.isRaw, ext: i.ext,
+    size: i.size, mtimeMs: i.mtimeMs, baseName: i.baseName,
+    dataUrl: i.dataUrl, thumbUrl: i.thumbUrl, analysisUrl: i.analysisUrl,
+  }))
   // Hash disimpan per-item (bukan push saat callback paralel selesai) agar urutan
   // grouping deterministik: run yang sama, folder yang sama = hasil yang sama.
 
@@ -61,6 +45,9 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
     if (opts.shouldCancel?.()) { cancelledEarly = true; break }
     const batch = results.slice(i, i + batchSize)
     await Promise.all(batch.map(async (item) => {
+      const started = performance.now()
+      const trace = newTrace(item.id)
+      ;(item as any).engineTrace = trace
       // v2: analysis image (High) didahulukan; thumb untuk grid + mode lain.
       const src = (item as any).analysisUrl || item.thumbUrl || item.dataUrl
       if (item.isRaw && !src) {
@@ -76,6 +63,7 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
       }
       // Foto tanpa gambar sama sekali (thumbnail gagal & bukan RAW) → aman: Maybe, JANGAN throw.
       if (!src) {
+        trace.inputError = 'PREVIEW_UNAVAILABLE'
         noSrcCount++
         item.sharpness = 40
         item.aesthetic = 45
@@ -96,6 +84,8 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
         feat = null
       }
       if (!feat) {
+        trace.inputStatus = 'error'
+        trace.inputError = 'ANALYSIS_FAILED'
         featNullCount++
         item.sharpness = 40
         item.aesthetic = 45
@@ -107,6 +97,10 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
         return
       }
 
+      trace.inputStatus = 'ok'
+      trace.technical = technicalEvidence(feat)
+      trace.timingMs.technical = performance.now() - started
+      trace.eyeBefore = feat.face.eyesState
       const { sharpness: sh, aesthetic: ae, composition: co, face, tilt, subject, motion, dhash } = feat
       ;(item as any).dhash = dhash
       // v2 subject (High saja; mode lain tak tersentuh).
@@ -121,11 +115,13 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
         try {
           const img = await decodeOnce(src, 320)
           const sum = img ? await detectFacesONNX(img) : null
+          trace.onnx = sum ?? { status: 'unavailable', available: false, count: 0, maxScore: 0, maxArea: 0, boxes: [], durationMs: 0, errorCode: 'DECODE_FAILED' }
           ;(item as any).onnxFace = sum
           if (sum && sum.available && sum.maxArea > 0.12) {
             ;(item as any).onnxDominantUnknown = true
           }
-        } catch {
+        } catch (e) {
+          trace.onnx = { status: 'error', available: false, count: 0, maxScore: 0, maxArea: 0, boxes: [], durationMs: 0, errorCode: String((e as Error)?.message || e) }
           ;(item as any).onnxFace = null
         }
       }
@@ -140,6 +136,7 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
           if (cands.length) {
             const img640 = await decodeOnce(src, 640)
             const roi = img640 ? await refineEyesWithROI(img640, cands[0].box) : null
+            trace.pass2 = { status: roi ? 'ok' : 'unknown', result: roi }
             ;(item as any).pass2 = roi
             if (roi && roi.eyesState === 'open' && roi.eyesClosedProbability <= 0.2) {
               face.eyesState = 'open'
@@ -149,7 +146,8 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
               face.eyesClosedProbability = roi.eyesClosedProbability
             }
           }
-        } catch {
+        } catch (e) {
+          trace.pass2 = { status: 'error', errorCode: String((e as Error)?.message || e) }
           ;(item as any).pass2 = null
         }
       }
@@ -162,6 +160,7 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
           const hi = opts.analyze
             ? await opts.analyze(src, 768)
             : await analyzeOne(src, 768)
+          trace.hiEye = { status: hi ? 'ok' : 'unknown' }
           const hf = hi?.face
           if (hf && hf.hasFace) {
             face.pupilHits = hf.pupilHits ?? face.pupilHits
@@ -173,10 +172,15 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
               face.eyesClosedProbability = hf.eyesClosedProbability
             }
           }
-        } catch {
+        } catch (e) {
+          trace.hiEye = { status: 'error', errorCode: String((e as Error)?.message || e) }
           ;(item as any).eyeHi = null
         }
       }
+      trace.eyeAfter = face.eyesState
+      trace.eyeProbability = face.eyesClosedProbability
+      trace.onnxDominantUnknown = !!(item as any).onnxDominantUnknown
+      trace.timingMs.face = performance.now() - started - trace.timingMs.technical
       ;(item as any).pupilHits = face.pupilHits ?? 0
 
       // Keputusan mata tertutup memakai ambang probabilitas per mode (high paling tegas).
@@ -336,6 +340,8 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
       ;(item as any).v2cap = v2cap
       // confidence keseluruhan untuk UI (mis. tampilkan "perlu cek manual" jika rendah)
       item.confidence = Math.round(((sh.confidence + ae.confidence + (face.hasFace ? face.faceConfidence : 0.7)) / 3) * 100) / 100
+      trace.focusScore = item.sharpness
+      trace.timingMs.total = performance.now() - started
     }))
     done += batch.length
     if (opts.onProgress) batch.forEach((b) => opts.onProgress!(done, results.length, b))
@@ -359,6 +365,7 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
     const groupItems = ids.map((id) => results.find((r) => r.id === id)!).filter(Boolean)
       .sort((a, b) => (b.score || 0) - (a.score || 0))
     const maxFocus = Math.max(...groupItems.map((g) => g.sharpness ?? 0))
+    for (const member of groupItems) (member as any).burstId = ids[0]
     const best = groupItems[0]
     ;(best as any).clusterRank = 0
     ;(best as any).clusterSize = groupItems.length
@@ -399,118 +406,15 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
     }
   })
 
-  // Kategorisasi — hard rule dulu (objektif, berani), baru threshold skor per mode.
-  // item.sharpness di sini = skor FOKUS (global + subjek + tepi), bukan Laplacian mentah.
-  const v2sCap = V2_SUBJECT && opts.mode === 'high'
   for (const item of results) {
-    // Reason codes final (setelah push duplikat) untuk diagnostik/evaluator.
-    ;(item as any).reasonCodes = codesFor(item.reasons)
-    const s = item.score ?? 50
-    const clippedHi = (item as any).clippedHi ?? 0
-    const clippedLo = (item as any).clippedLo ?? 0
-    const centerHi = (item as any).centerHi ?? 0
-    const comp = item.composition ?? 55
-    const conf = item.confidence ?? 1
-    const focus = item.sharpness ?? 100
-    // Highlight gosong: background gosong pada foto tajam = masalah editing, BUKAN
-    // alasan culling (terbukti menolak foto grup bagus). Tolak hanya bila gosong
-    // EKSTREM dan foto juga tak tajam; selebihnya Maybe (tak bisa Picks).
-    // Latar putih studio dikecualikan total (bukan cacat).
-    const whiteBg = (item as any).whiteBg === true
-    const smoothObject = (item as any).objMode === true
-    const blownExtreme = !whiteBg && (clippedHi > 25 || centerHi > 18)
-    const blownMid = !whiteBg && (clippedHi > preset.blownRejectAt || centerHi > 12)
-    let cat: CullCategory
-    if (item.eyesClosed) {
-      cat = 'rejects'
-    } else if ((item as any).accidental) {
-      cat = opts.mode === 'fast' ? 'maybe' : 'rejects' // frame kosong total
-    } else if (focus < ((item as any).blurFloor ?? preset.hardBlurBelow) && !smoothObject && !(item as any).eyesOpenProtect
-      && !(v2sCap && preset.hardBlurBelow - focus <= 2 && (item.exposure ?? 0) >= 90 && (item as any).meanLum >= 100)) {
-      cat = 'rejects' // fokus hancur pada konten bertekstur (objek mulus dinilai tanpa blur).
-      ;(item as any).blurReject = true // GT-2026-09: penanda vonis-blur (proteksi best-of-burst)
-      // Lunak-ringkas tapi TERANG (expo≥90, lum≥100, mis. IMG_6175 f59) = ambiguitas
-      // ringan → jatuh ke threshold (biasanya Maybe), bukan vonis keras.
-    } else if (preset.exposureHardReject && (item as any).meanLum !== undefined && (item as any).meanLum < 22 && clippedLo > 35) {
-      cat = 'rejects' // nyaris gelap total
-    } else if (preset.darkRejectAt > 0 && !whiteBg && (item.exposure ?? 100) <= preset.darkRejectAt && (item as any).meanLum < 35 && clippedHi < 5) {
-      cat = 'rejects' // exposure hancur panggung gelap (high saja; fokus tinggi tak menyelamatkan)
-    } else if ((item as any).v2cap === 'reject') {
-      cat = 'rejects' // v2: subjek wajah kritis lunak + yakin (high saja)
-    } else if (blownExtreme && preset.exposureHardReject && focus < 65) {
-      cat = 'rejects' // gosong parah + tak tajam = sampah
-    } else if (blownMid) {
-      cat = 'maybe' // highlight pecah tapi subjek selamat → jangan picks, jangan reject
-    } else if (preset.compositionHardReject && comp < 20 && (item as any).compConfidence > 0.5) {
-      cat = 'rejects' // komposisi hancur (high saja)
-    } else if (item.isDuplicate) {
-      // Kembaran yang jelas lebih lunak dari yang tertajam = versi gagal → Rejects.
-      // Kembaran yang setara = Maybe (bisa dipilih manual).
-      cat = (s < 35 || (item as any).softestInBurst === true || (item as any).redundantInBurst === true) ? 'rejects' : 'maybe'
-    } else if (s >= (smoothObject ? preset.picksAt - 10 : preset.picksAt)) {
-      // Picks harus bersih: tajam (kecuali objek mulus: fokus tak bermakna),
-      // tidak clipped, komposisi layak. Palang objek 10 poin lebih rendah karena
-      // langit-langit skornya memang lebih rendah (tekstur tak dinilai).
-      // Terkalibrasi di 74 foto produk: yang bersih lewat, bercacat tertahan gate lain.
-      const focusGate = !smoothObject && focus < preset.picksFocusMin
-      const clipGate = !whiteBg && (clippedHi > 8 || centerHi > 6)
-      // v2 cap (High saja): exposure hancur (bukan whiteBg/objek) = max Maybe.
-      // Terukur: 3 foto panggung OSIS (expo 26-28, f94-95); nol di dataset lain.
-      const expoCap = v2sCap && !smoothObject && !whiteBg && (item.exposure ?? 100) < 32
-      // Remang-blur (High): tanpa wajah + bukan produk + REMANG + lunak = max Maybe.
-      // Ambang lum<70 (bukan 95): foto kasual terang-biasa (lum 76-93, DIGICAM
-      // 0046/56/70/72) terbukti bagus → jangan sentuh. Yang kena: remang nyata.
-      const dimSoftCap = v2sCap && !smoothObject && !whiteBg && !(item as any).hasFace
-        && (item as any).meanLum < 70 && focus < 75
-      // Ketajaman milik background (High): zona tengah jauh lebih tajam +
-      // tanpa wajah + remang = subjek (orang) lunak, background tajam.
-      // Terukur: IMG_6191 (subj78, pintu tajam, orang blur).
-      const bgSharpCap = v2sCap && !smoothObject && !whiteBg && !(item as any).hasFace
-        && (item as any).meanLum < 90 && (item as any).subjFocus != null && (item as any).subjFocus - focus >= 5
-      cat = clipGate || comp < 30 || focusGate || expoCap || dimSoftCap || bgSharpCap || (item as any).v2cap === 'maybe' ? 'maybe' : 'picks'
+    classifyLegacy(item, opts.mode)
+    const trace = (item as any).engineTrace as EngineTrace | undefined
+    if (trace) {
+      trace.decision = item.category
+      trace.reasons = (item as any).reasonCodes || codesFor(item.reasons)
+      trace.burstId = (item as any).burstId
+      opts.onTrace?.(trace)
     }
-    else if (s >= preset.rejectBelow) cat = 'maybe'
-    else cat = 'rejects'
-
-    // GT-2026-09 (High): terbaik di burst-nya (clusterRank 0, grup >1) yang gugur
-    // HANYA karena blur = momen terbaik yang lunak → Maybe (bisa direview),
-    // bukan Rejects. Tak berlaku bila ada vonis subjek-kritis (v2cap reject).
-    if (v2sCap && (item as any).clusterRank === 0 && (item as any).clusterSize > 1 &&
-      cat === 'rejects' && (item as any).blurReject === true && (item as any).v2cap !== 'reject') {
-      cat = 'maybe'
-      item.reasons = [...(item.reasons || []).filter((r) => r !== 'Blur / tidak fokus'), 'Terbaik di burst-nya tapi lunak']
-      item.reasonsEn = [...(item.reasonsEn || []).filter((r) => r !== 'Blurry / out of focus'), 'Best in burst but soft']
-    }
-
-    // Pengaman terakhir: confidence sangat rendah → jangan reject, taruh Maybe.
-    // Lantainya diturunkan per mode agar yang berani (high) jarang disoin.
-    if (cat === 'rejects' && conf < preset.confRejectFloor && !item.eyesClosed) cat = 'maybe'
-
-    // LARANGAN KERAS (user): tak ada vonis tanpa keterangan. Bila reasons kosong:
-    // picks/maybe dapat ringkasan eviden jujur; rejects TANPA bukti = turun Maybe.
-    if (!item.reasons || item.reasons.length === 0) {
-      const expo = item.exposure ?? 0
-      if (cat === 'rejects') {
-        cat = 'maybe'
-        item.reasons = ['Perlu review manual']
-        item.reasonsEn = ['Needs manual review']
-      } else if (cat === 'picks') {
-        const pos: [string, string][] = []
-        if (!smoothObject && focus >= 70) pos.push(['Fokus baik', 'Good focus'])
-        if (expo >= 60) pos.push(['Eksposur baik', 'Good exposure'])
-        if (comp >= 60) pos.push(['Komposisi baik', 'Good composition'])
-        if ((item as any).eyesState === 'open') pos.push(['Mata terbuka', 'Eyes open'])
-        if (!pos.length) pos.push(['Lolos semua gate', 'Passed all gates'])
-        item.reasons = pos.slice(0, 2).map(([id]) => id)
-        item.reasonsEn = pos.slice(0, 2).map(([, en]) => en)
-      } else {
-        item.reasons = [`Belum meyakinkan (skor ${s})`]
-        item.reasonsEn = [`Uncertain (score ${s})`]
-      }
-      ;(item as any).reasonCodes = codesFor(item.reasons)
-    }
-
-    item.category = cat
   }
 
   clearPipelineCache()

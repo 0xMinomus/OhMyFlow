@@ -1,0 +1,7 @@
+const { buildSync } = require('esbuild')
+const { mkdirSync } = require('fs')
+const { resolve } = require('path')
+mkdirSync('.engine-eval', { recursive: true })
+const outfile = resolve('.engine-eval/tests.cjs')
+buildSync({ entryPoints: ['scripts/engine-regression.ts'], outfile, bundle: true, platform: 'node', format: 'cjs', logLevel: 'error' })
+require(outfile)

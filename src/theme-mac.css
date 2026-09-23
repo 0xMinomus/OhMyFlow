@@ -1,0 +1,200 @@
+/* macOS theme. Overrides every w7-* class when an ancestor has
+   .theme-mac. Authentic metrics: -apple-system/SF stack, flat light
+   surfaces, 6-8px radii, vibrancy-gray, SF blue accent, traffic-light
+   titlebar, segmented tabs, pill badges, no bold except headings. */
+
+.theme-mac, .theme-mac * { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+.theme-mac ::selection { background: rgba(0, 122, 255, 0.25); color: #000; }
+.theme-mac :focus-visible { outline: 2px solid #007aff; outline-offset: 2px; border-radius: 6px; }
+
+.theme-mac ::-webkit-scrollbar { width: 12px; height: 12px; }
+.theme-mac ::-webkit-scrollbar-track { background: transparent; }
+.theme-mac ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.3); border: 3px solid transparent; background-clip: content-box; border-radius: 7px; }
+.theme-mac ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.45); border: 3px solid transparent; background-clip: content-box; }
+.theme-mac ::-webkit-scrollbar-button { display: none; }
+
+.theme-mac .w7-desktop { background: #ececec; }
+.theme-mac .w7-window {
+  background: rgba(242, 242, 242, 0.94);
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.theme-mac .w7-titlebar {
+  background: linear-gradient(180deg, #e8e8e8 0%, #d6d6d6 100%);
+  border-bottom: 1px solid #b5b5b5;
+  min-height: 22px;
+}
+.theme-mac .w7-title { color: #1d1d1f; text-shadow: none; font-weight: 600; }
+.theme-mac .w7-subtitle { color: #6e6e73; text-shadow: none; }
+
+.theme-mac .w7-caption {
+  border: none;
+  background: transparent;
+  color: #6e6e73;
+  text-shadow: none;
+  border-radius: 50%;
+}
+.theme-mac .w7-caption:hover { background: rgba(0, 0, 0, 0.08); }
+.theme-mac .w7-caption:active { background: rgba(0, 0, 0, 0.15); }
+.theme-mac .w7-caption-danger:hover { background: #ff5f57; color: #fff; border-color: transparent; }
+
+.theme-mac .w7-client { background: transparent; }
+
+.theme-mac .w7-group {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.theme-mac .w7-legend { color: #6e6e73; letter-spacing: 0; font-size: 11px; }
+.theme-mac .w7-separator { height: 0; background: none; border-top: 1px solid rgba(0, 0, 0, 0.1); border-bottom: none; }
+
+.theme-mac .w7-btn {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  padding: 4px 14px;
+  color: #1d1d1f;
+  background: linear-gradient(180deg, #ffffff 0%, #f5f5f7 100%);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
+}
+.theme-mac .w7-btn:hover {
+  border-color: rgba(0, 0, 0, 0.16);
+  background: linear-gradient(180deg, #ffffff 0%, #ececf0 100%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+.theme-mac .w7-btn:active {
+  background: #e5e5e7;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.theme-mac .w7-btn:disabled {
+  color: rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.5);
+  box-shadow: none;
+  opacity: 1;
+}
+.theme-mac .w7-btn-primary {
+  border-color: transparent;
+  color: #fff;
+  background: linear-gradient(180deg, #409cff 0%, #007aff 100%);
+  box-shadow: 0 1px 2px rgba(0, 90, 200, 0.35);
+}
+.theme-mac .w7-btn-primary:hover {
+  background: linear-gradient(180deg, #5aacff 0%, #0a84ff 100%);
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(0, 90, 200, 0.4);
+}
+.theme-mac .w7-btn-green {
+  border-color: transparent;
+  color: #fff;
+  background: linear-gradient(180deg, #40c057 0%, #2f9e44 100%);
+}
+.theme-mac .w7-btn-green:hover { background: linear-gradient(180deg, #51cf66 0%, #37b24d 100%); border-color: transparent; }
+.theme-mac .w7-btn-amber {
+  border-color: transparent;
+  color: #fff;
+  background: linear-gradient(180deg, #fab005 0%, #f08c00 100%);
+}
+.theme-mac .w7-btn-amber:hover { background: linear-gradient(180deg, #fcc419 0%, #f59f00 100%); border-color: transparent; }
+.theme-mac .w7-btn-red {
+  border-color: transparent;
+  color: #fff;
+  background: linear-gradient(180deg, #ff6b6b 0%, #fa5252 100%);
+}
+.theme-mac .w7-btn-red:hover { background: linear-gradient(180deg, #ff8787 0%, #ff6b6b 100%); border-color: transparent; }
+
+.theme-mac .w7-field {
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.theme-mac .w7-drop {
+  border: 1.5px dashed #aeaeb2;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.5);
+}
+.theme-mac .w7-drop:hover { border-color: #007aff; background: rgba(0, 122, 255, 0.06); }
+
+.theme-mac .w7-tabs { border-bottom: 1px solid rgba(0, 0, 0, 0.1); background: transparent; }
+.theme-mac .w7-tab {
+  border: none;
+  border-radius: 6px;
+  color: #6e6e73;
+  background: transparent;
+  padding: 4px 10px;
+}
+.theme-mac .w7-tab:hover { color: #1d1d1f; background: rgba(0, 0, 0, 0.05); }
+.theme-mac .w7-tab-active { color: #fff; background: #8e8e93; border: none; }
+.theme-mac .w7-tab-cat-picks.w7-tab-active { background: #34c759; }
+.theme-mac .w7-tab-cat-maybe.w7-tab-active { background: #ff9f0a; }
+.theme-mac .w7-tab-cat-reject.w7-tab-active { background: #ff453a; }
+
+.theme-mac .w7-card {
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.theme-mac .w7-card-head {
+  background: #f5f5f7;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+.theme-mac .w7-card-picks .w7-card-head { border-bottom: 2px solid #34c759; }
+.theme-mac .w7-card-maybe .w7-card-head { border-bottom: 2px solid #ff9f0a; }
+.theme-mac .w7-card-reject .w7-card-head { border-bottom: 2px solid #ff453a; }
+.theme-mac .w7-badge {
+  border: none;
+  border-radius: 20px;
+  background: #e9e9eb;
+  color: #1d1d1f;
+  box-shadow: none;
+  padding: 1px 8px;
+}
+.theme-mac .w7-badge-pick { background: rgba(52, 199, 89, 0.18); color: #248a3d; }
+.theme-mac .w7-badge-maybe { background: rgba(255, 159, 10, 0.2); color: #b26a00; }
+.theme-mac .w7-badge-reject { background: rgba(255, 69, 58, 0.15); color: #d70015; }
+
+.theme-mac .w7-status {
+  background: rgba(236, 236, 236, 0.9);
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  color: #6e6e73;
+}
+.theme-mac .w7-status-grip { display: none; }
+.theme-mac .w7-pager {
+  background: transparent;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.theme-mac .w7-progress {
+  height: 8px;
+  border: none;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+.theme-mac .w7-progress > div {
+  background: linear-gradient(180deg, #5ac8fa 0%, #007aff 100%);
+  transition: width 0.2s linear;
+}
+
+.theme-mac .w7-dialog {
+  background: rgba(242, 242, 242, 0.97);
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+.theme-mac .w7-dialog-title {
+  background: transparent;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  color: #1d1d1f;
+  text-shadow: none;
+  font-weight: 600;
+}
+.theme-mac .w7-scrim { background: rgba(0, 0, 0, 0.3); }
+
+.theme-mac .w7-viewer { background: #1d1d1f; }
+.theme-mac .w7-text { color: #1d1d1f; }
+.theme-mac .w7-muted { color: #6e6e73; }
+.theme-mac .w7-faint { color: #aeaeb2; }

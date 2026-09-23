@@ -1,6 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('ohmyflow', {
+  getEngineConfig: () => ipcRenderer.invoke('engine:config'),
+  saveEngineTrace: (jsonl: string) => ipcRenderer.invoke('engine:saveTrace', jsonl),
+  engineEvalJob: () => ipcRenderer.invoke('engine:evalJob'),
+  engineEvalComplete: (result: unknown) => ipcRenderer.invoke('engine:evalComplete', result),
   openFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFolder'),
   scanFolder: (folderPath: string): Promise<any[]> => ipcRenderer.invoke('fs:scanFolder', folderPath),
   readImageAsDataUrl: (filePath: string): Promise<any> => ipcRenderer.invoke('fs:readImageAsDataUrl', filePath),
@@ -24,6 +28,8 @@ contextBridge.exposeInMainWorld('ohmyflow', {
 declare global {
   interface Window {
     ohmyflow: {
+      getEngineConfig: () => Promise<{ engine: 'legacy' | 'v2-shadow' | 'v2-active' }>
+      saveEngineTrace: (jsonl: string) => Promise<string>
       openFolder: () => Promise<string | null>
       scanFolder: (p: string) => Promise<any[]>
       readImageAsDataUrl: (p: string) => Promise<{ dataUrl: string | null, isRaw: boolean, ext?: string, error?: string }>

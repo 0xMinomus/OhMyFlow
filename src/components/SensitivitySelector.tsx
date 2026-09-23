@@ -49,28 +49,24 @@ export function SensitivitySelector() {
   const photoCount = useStore(s=>s.photos.length)
 
   return (
-    <div className="grid md:grid-cols-3 gap-3">
+    <div className="grid gap-3 md:grid-cols-3">
       {SENSITIVITY_MODES.map(m=>(
         <button
           key={m.id}
           onClick={()=> appStore.setSensitivity(m.id)}
           aria-pressed={mode===m.id}
-          className={`rounded-sm border p-3.5 text-left transition min-h-[92px] ${
-            mode===m.id
-              ? 'bg-flow-800 border-emerald-500'
-              : 'bg-flow-800 border-flow-600 hover:border-zinc-500'
-          }`}
+          className={`w7-btn min-h-[92px] flex-col items-start gap-1 p-3.5 text-left ${mode===m.id ? 'w7-btn-primary' : ''}`}
         >
-          <div className="flex items-center gap-2 font-mono text-sm font-bold leading-none">
-            <span aria-hidden="true" className={mode===m.id ? 'text-emerald-400' : 'text-zinc-600'}>
-              {mode===m.id ? '[●]' : '[ ]'}
+          <div className="flex items-center gap-2 font-sans text-sm font-bold leading-none">
+            <span aria-hidden="true" className={mode===m.id ? 'text-[#2f6ea5]' : 'text-[#8293a3]'}>
+              {mode===m.id ? '◉' : '○'}
             </span>
-            <span className="text-white">{m.name}</span>
+            <span>{m.name}</span>
           </div>
-          <div className="font-mono text-[11px] mt-2 leading-snug text-zinc-400">
+          <div className="w7-muted mt-2 font-sans text-[11px] leading-snug">
             {lang==='id' ? m.descId : m.descEn}
           </div>
-          <div className="mt-2 font-mono text-[11px] tabular-nums text-zinc-500">
+          <div className="w7-faint w7-num mt-2 font-sans text-[11px]">
             {estimateDuration(photoCount, m.throughputPerMin, lang)} · {photoCount} {lang==='id' ? 'foto' : 'photos'} · {lang==='id' ? m.paceId : m.paceEn}
           </div>
         </button>

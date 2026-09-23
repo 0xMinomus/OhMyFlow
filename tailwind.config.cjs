@@ -23,8 +23,8 @@ module.exports = {
         rejects: '#ef4444',
       },
       fontFamily: {
-        sans: ['"Cascadia Mono"', 'ui-monospace', 'Consolas', '"Courier New"', 'monospace'],
-        mono: ['"Cascadia Mono"', 'ui-monospace', 'Consolas', '"Courier New"', 'monospace'],
+        sans: ['"Segoe UI"', 'Tahoma', 'Verdana', 'sans-serif'],
+        mono: ['Consolas', '"Courier New"', 'monospace'],
       }
     },
   },

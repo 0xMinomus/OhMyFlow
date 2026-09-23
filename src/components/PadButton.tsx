@@ -14,7 +14,7 @@ export function PadButton({ index, kind, active }: { index: number; kind: PadKin
   const shape = SHAPES[g] ?? 'rounded-sm'
   return (
     <span
-      className={`inline-flex min-w-[2rem] items-center justify-center border px-1.5 py-0.5 font-mono text-[11px] font-bold ${shape} ${active ? 'border-emerald-400 text-emerald-300' : 'border-flow-500 text-white'}`}
+      className={`w7-btn inline-flex min-w-[2rem] items-center justify-center px-1.5 py-0.5 font-sans text-[11px] font-bold ${shape} ${active ? 'w7-btn-primary' : ''}`}
     >
       {g}
     </span>

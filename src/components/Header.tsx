@@ -14,6 +14,7 @@ function GearIcon() {
 
 export function Header() {
   const lang = useStore(s=>s.language)
+  const theme = useStore(s=>s.theme)
   const binds = useStore(s=>s.keybinds)
   const padbinds = useStore(s=>s.padbinds)
   const padOn = useStore(s=>s.padConnected)
@@ -57,58 +58,58 @@ export function Header() {
   }, [capture])
   return (
     <div className="shrink-0 select-none">
-    <div className="h-16 flex items-center justify-between px-4 bg-flow-900 border-b border-flow-600" style={{ WebkitAppRegion: 'drag' } as any}>
-      <div className="flex items-center gap-2.5 min-w-0">
+    <div className="w7-titlebar flex h-16 items-center justify-between px-4" style={{ WebkitAppRegion: 'drag' } as any}>
+      <div className="flex min-w-0 items-center gap-2.5">
         <img
           src="logo.png"
           alt="OhMyFlow"
           width={28}
           height={28}
           draggable={false}
-          className="w-7 h-7 rounded border border-flow-600 object-cover shrink-0"
+          className="h-7 w-7 shrink-0 border border-white/70 object-cover"
           style={{ imageRendering: 'pixelated' }}
         />
-        <div className="leading-tight min-w-0">
-          <div className="font-mono text-xl font-bold text-white tracking-tight truncate">
-            OhMyFlow <span className="text-sm font-normal text-zinc-500">v1.2</span>
+        <div className="min-w-0 leading-tight">
+          <div className="w7-title truncate font-sans text-xl font-bold tracking-tight">
+            OhMyFlow <span className="w7-subtitle text-sm font-normal">v1.2</span>
           </div>
-          <div className="font-mono text-xs text-zinc-500 truncate">Culling made simple.</div>
+          <div className="w7-subtitle truncate font-sans text-xs">Culling made simple.</div>
         </div>
       </div>
-      <div className="flex items-center gap-1 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
+      <div className="flex shrink-0 items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as any}>
         <button
           onClick={()=> { setOpen(o=>!o); setCapture(null); setPadCapture(null) }}
           aria-label={t('Pengaturan', 'Settings')}
           aria-expanded={open}
-          className="mr-1 flex items-center justify-center rounded-sm border border-flow-600 px-2 py-1.5 text-zinc-400 transition hover:border-zinc-500 hover:text-white"
+          className="w7-caption mr-1 px-2 py-1.5"
         >
           <GearIcon />
         </button>
         <button
           onClick={()=> appStore.setLanguage(lang==='id'?'en':'id')}
           aria-label={lang==='id' ? 'Switch to English' : 'Ganti ke Bahasa Indonesia'}
-          className="mr-1 font-mono text-[11px] font-bold border border-flow-600 rounded-sm px-2 py-1 text-zinc-400 hover:text-white hover:border-zinc-500 transition"
+          className="w7-caption mr-1 px-2 py-1 font-sans text-[11px] font-bold"
         >
           {lang==='id' ? 'EN' : 'ID'}
         </button>
         <button
           onClick={()=> window.ohmyflow.windowControls.minimize()}
           aria-label="Minimize"
-          className="w-9 h-8 flex items-center justify-center text-sm text-zinc-400 hover:bg-flow-600 hover:text-white transition"
+          className="w7-caption h-8 w-9 text-sm"
         >
           ─
         </button>
         <button
           onClick={()=> window.ohmyflow.windowControls.maximize()}
           aria-label="Maximize"
-          className="w-9 h-8 flex items-center justify-center text-xs text-zinc-400 hover:bg-flow-600 hover:text-white transition"
+          className="w7-caption h-8 w-9 text-xs"
         >
           □
         </button>
         <button
           onClick={()=> window.ohmyflow.windowControls.close()}
           aria-label="Close"
-          className="w-9 h-8 flex items-center justify-center text-sm text-zinc-400 hover:text-red-400 transition"
+          className="w7-caption w7-caption-danger h-8 w-9 text-sm"
         >
           ✕
         </button>
@@ -116,7 +117,7 @@ export function Header() {
     </div>
     {open && (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+        className="w7-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
         onClick={()=> { if (!capture && !padCapture) setOpen(false) }}
         role="presentation"
       >
@@ -126,27 +127,44 @@ export function Header() {
         aria-modal="true"
         aria-label={t('Pengaturan', 'Settings')}
         onClick={(e)=> e.stopPropagation()}
-        className="w-full max-w-lg rounded-md border border-flow-500 bg-flow-800 p-5"
+        className="w7-dialog w-full max-w-lg overflow-hidden"
       >
-        <div className="mb-3 flex items-center justify-between">
-          <div className="font-mono text-[13px] font-bold text-white">{t('Pengaturan', 'Settings')}</div>
+        <div className="w7-dialog-title flex items-center justify-between px-4 py-2">
+          <div className="font-sans text-[13px] font-bold">{t('Pengaturan', 'Settings')}</div>
           <button
             onClick={()=> { setOpen(false); setCapture(null); setPadCapture(null) }}
             aria-label={t('Tutup', 'Close')}
-            className="rounded border border-flow-600 p-1.5 text-zinc-300 transition hover:border-zinc-400 hover:text-white"
+            className="w7-btn px-2 py-0.5 text-xs font-bold"
           >
             ✕
           </button>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <fieldset className="rounded border border-flow-600 p-3">
-            <legend className="px-1 font-mono text-[11px] font-bold tracking-widest text-zinc-300">
+        <div className="p-4">
+        <fieldset className="w7-group mb-3 px-3 py-2">
+          <legend className="w7-legend px-1 font-sans text-[11px] font-bold">{t('[ TEMA ]', '[ THEME ]')}</legend>
+          <div className="flex gap-1.5" role="radiogroup" aria-label={t('Tema', 'Theme')}>
+            {(['win7','win98','mac'] as const).map(id => (
+              <button
+                key={id}
+                role="radio"
+                aria-checked={theme===id}
+                onClick={()=> appStore.setTheme(id)}
+                className={`w7-btn min-w-0 flex-1 py-1.5 font-sans text-[11px] font-bold ${theme===id ? 'w7-btn-primary' : ''}`}
+              >
+                {theme===id ? '◉' : '○'} {id==='win7' ? t('Windows 7', 'Windows 7') : id==='win98' ? t('Windows 98', 'Windows 98') : t('macOS', 'macOS')}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <fieldset className="w7-group p-3">
+            <legend className="w7-legend px-1 font-sans text-[11px] font-bold">
               {t('[ KEYBOARD ]', '[ KEYBOARD ]')}
             </legend>
             {(['prev','next','picks','maybe','rejects'] as const).map(act => (
               <div key={act} className="mb-1.5 flex items-center justify-between gap-2">
-                <span className={`h-2 w-2 rounded-full ${act === 'picks' ? 'bg-emerald-400' : act === 'maybe' ? 'bg-amber-300' : act === 'rejects' ? 'bg-red-400' : 'bg-zinc-500'}`} aria-hidden="true" />
-                <span className="flex-1 font-mono text-[11px] text-zinc-300">
+                <span className={`h-2 w-2 ${act === 'picks' ? 'bg-[#2f7a3d]' : act === 'maybe' ? 'bg-[#8a6d00]' : act === 'rejects' ? 'bg-[#a93226]' : 'bg-[#8293a3]'}`} aria-hidden="true" />
+                <span className="flex-1 font-sans text-[11px]">
                   {act === 'prev' ? t('← Sebelumnya', '← Previous')
                     : act === 'next' ? t('Berikutnya →', 'Next →')
                     : act === 'picks' ? t('Picks', 'Picks')
@@ -154,37 +172,37 @@ export function Header() {
                 </span>
                 <button
                   onClick={()=> setCapture(act)}
-                  className={`min-w-[3rem] rounded-sm border px-2 py-1 text-center font-mono text-[11px] font-bold transition ${capture === act ? 'border-emerald-400 text-emerald-300' : 'border-flow-700 text-white hover:border-zinc-400'}`}
+                  className="w7-btn min-w-[3rem] px-2 py-1 text-center font-sans text-[11px] font-bold"
                 >
                   {capture === act ? '…' : keyGlyph(binds[act])}
                 </button>
               </div>
             ))}
             {capture
-              ? <div className="font-mono text-[10px] text-emerald-300">{t('Tekan tombol baru… (Esc batal)', 'Press a new key… (Esc cancels)')}</div>
+              ? <div className="font-sans text-[10px] text-[#2f6ea5]">{t('Tekan tombol baru… (Esc batal)', 'Press a new key… (Esc cancels)')}</div>
               : <button
                   onClick={()=> { appStore.resetKeybinds(); setCapture(null) }}
-                  className="mt-1 font-mono text-[10px] font-bold text-zinc-500 transition hover:text-white"
+                  className="mt-1 font-sans text-[10px] font-bold text-[#5b6b7a] hover:text-[#1e2c3a]"
                 >
                   {t('[ Reset bawaan ]', '[ Reset defaults ]')}
                 </button>}
           </fieldset>
-          <fieldset className="rounded border border-flow-600 p-3">
-            <legend className="px-1 font-mono text-[11px] font-bold tracking-widest text-zinc-300">
+          <fieldset className="w7-group p-3">
+            <legend className="w7-legend px-1 font-sans text-[11px] font-bold">
               {t('[ CONTROLLER ]', '[ CONTROLLER ]')}{' '}
-              <span className={padOn ? 'text-emerald-400' : 'text-zinc-600'}>
+              <span className={padOn ? 'text-[#2f7a3d]' : 'text-[#8293a3]'}>
                 {padOn ? '●' : '○'}
               </span>
             </legend>
             {!padOn && (
-              <div className="mb-1.5 font-mono text-[10px] text-zinc-500">
+              <div className="mb-1.5 font-sans text-[10px] text-[#5b6b7a]">
                 {t('Colok controller + tekan tombol apa saja.', 'Plug in a controller + press any button.')}
               </div>
             )}
             {(['prev','next','picks','maybe','rejects'] as const).map(act => (
               <div key={act} className="mb-1.5 flex items-center justify-between gap-2">
-                <span className={`h-2 w-2 rounded-full ${act === 'picks' ? 'bg-emerald-400' : act === 'maybe' ? 'bg-amber-300' : act === 'rejects' ? 'bg-red-400' : 'bg-zinc-500'}`} aria-hidden="true" />
-                <span className="flex-1 font-mono text-[11px] text-zinc-300">
+                <span className={`h-2 w-2 ${act === 'picks' ? 'bg-[#2f7a3d]' : act === 'maybe' ? 'bg-[#8a6d00]' : act === 'rejects' ? 'bg-[#a93226]' : 'bg-[#8293a3]'}`} aria-hidden="true" />
+                <span className="flex-1 font-sans text-[11px]">
                   {act === 'prev' ? t('← Sebelumnya', '← Previous')
                     : act === 'next' ? t('Berikutnya →', 'Next →')
                     : act === 'picks' ? t('Picks', 'Picks')
@@ -197,16 +215,16 @@ export function Header() {
                   className="transition hover:opacity-80"
                 >
                   {padCapture === act
-                    ? <span className="inline-flex min-w-[2rem] items-center justify-center rounded-sm border border-emerald-400 px-1.5 py-0.5 font-mono text-[11px] font-bold text-emerald-300">…</span>
+                    ? <span className="w7-btn inline-flex min-w-[2rem] items-center justify-center px-1.5 py-0.5 font-sans text-[11px] font-bold">…</span>
                     : <PadButton index={padbinds[act]} kind={kind} />}
                 </button>
               </div>
             ))}
             {padCapture
-              ? <div className="font-mono text-[10px] text-emerald-300">{t('Tekan tombol controller… (10 dtk)', 'Press controller button… (10s)')}</div>
+              ? <div className="font-sans text-[10px] text-[#2f6ea5]">{t('Tekan tombol controller… (10 dtk)', 'Press controller button… (10s)')}</div>
               : <button
                   onClick={()=> { appStore.resetPadbinds(); setPadCapture(null) }}
-                  className="mt-1 font-mono text-[10px] font-bold text-zinc-500 transition hover:text-white"
+                  className="mt-1 font-sans text-[10px] font-bold text-[#5b6b7a] hover:text-[#1e2c3a]"
                 >
                   {t('[ Reset bawaan ]', '[ Reset defaults ]')}
                 </button>}
@@ -214,10 +232,11 @@ export function Header() {
         </div>
         <button
           onClick={()=> { setOpen(false); setCapture(null); setPadCapture(null) }}
-          className="mt-4 w-full rounded border border-white bg-white px-4 py-2 font-mono text-[11px] font-bold text-black transition hover:bg-zinc-200"
+          className="w7-btn w7-btn-primary mt-4 w-full px-4 py-2 font-sans text-[11px] font-bold"
         >
           {t('[ Tutup ]', '[ Close ]')}
         </button>
+        </div>
       </div>
       </div>
     )}

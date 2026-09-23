@@ -7,8 +7,8 @@ export function Fieldset({ num, title, children, className = '' }: {
   className?: string
 }) {
   return (
-    <fieldset className={`rounded border border-flow-600 min-w-0 ${className}`}>
-      <legend className="ml-2 px-2 font-mono text-[13px] font-bold uppercase tracking-[0.18em] text-zinc-300">
+    <fieldset className={`w7-group min-w-0 ${className}`}>
+      <legend className="w7-legend ml-2 px-2 font-sans text-[13px] font-bold uppercase tracking-[0.18em]">
         {num}. {title}
       </legend>
       {children}

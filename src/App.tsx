@@ -31,6 +31,7 @@ export default function App() {
   const padOn = useStore(s=> s.padConnected)
   const t = (id: string, en: string) => (lang==='id' ? id : en)
 
+  const theme = useStore(s=> s.theme)
   const hasPhotos = photos.length > 0
   const modeName = SENSITIVITY_MODES.find(m=>m.id===mode)?.name ?? mode
   const status = progress
@@ -42,35 +43,38 @@ export default function App() {
         : t('Siap untuk memulai', 'Ready to start')
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col">
-      <div className="flex-1 mx-auto my-4 w-[calc(100%-2rem)] max-w-[1520px] rounded-md border border-flow-500 bg-flow-900 flex flex-col min-h-[calc(100vh-2rem)] overflow-hidden">
+    <div className={`h-screen w-screen overflow-hidden font-sans ${theme==='win98' ? 'theme-98' : theme==='mac' ? 'theme-mac' : ''}`}>
+      <div className="w7-window flex h-full w-full flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 w-full px-4 py-4 flex flex-col gap-4">
-          <FolderPicker />
-          {hasPhotos && (
-            <Fieldset num="02" title={t('Mode Culling', 'Culling Mode')}>
-              <div className="p-3">
-                <SensitivitySelector />
-              </div>
-              <div className="border-t border-flow-700" />
-              <div className="px-3 py-3">
-                <CullingView />
-              </div>
-            </Fieldset>
+        <main className="w7-client flex w-full flex-1 flex-col overflow-hidden min-h-0">
+          <div className="flex shrink-0 flex-col gap-3 px-4 pt-4">
+            <FolderPicker />
+            {hasPhotos && (
+              <Fieldset num="02" title={t('Mode Culling', 'Culling Mode')}>
+                <div className="p-3">
+                  <SensitivitySelector />
+                </div>
+                <div className="w7-separator" />
+                <div className="px-3 py-3">
+                  <CullingView />
+                </div>
+              </Fieldset>
+            )}
+          </div>
+          {(step==='review' || stats) && (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-3">
+              <PhotoGrid />
+            </div>
           )}
-          {(step==='review' || stats) && <PhotoGrid />}
         </main>
-        <footer className="shrink-0 border-t border-flow-700 px-4 h-10 flex items-center justify-between gap-2 font-mono text-[11px] tabular-nums text-zinc-500">
+        <footer className="w7-status flex h-9 shrink-0 items-center justify-between gap-2 px-3 text-[11px]">
           <span className="truncate">
             {hasPhotos ? `${photos.length} ${t('foto', 'photos')} | Mode: ${modeName} | ${status}` : status}
           </span>
-          <span className="shrink-0 hidden sm:flex items-center gap-1.5">
+          <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
             OhMyFlow v1.2
-            <span className="text-zinc-600">|</span>
-            {padOn && (<span className="text-emerald-400 font-bold">[PAD]</span>)}
-            {padOn && (<span className="text-zinc-600">|</span>)}
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-            {t('100% Lokal', '100% Local')}
+            {padOn && (<span className="w7-faint">|</span>)}
+            {padOn && (<span className="font-bold text-[#2f7a3d]">PAD</span>)}
           </span>
         </footer>
       </div>

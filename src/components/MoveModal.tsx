@@ -48,9 +48,9 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
   const maybe = photos.filter(p=>p.category==='maybe')
   const rejects = photos.filter(p=>p.category==='rejects')
   const cats = [
-    { id: 'picks' as const, list: picks, on: withPicks, set: setWithPicks, dot: 'bg-emerald-400', name: 'Picks', desc: t('Terbaik, layak edit', 'Best shots, worth editing') },
-    { id: 'maybe' as const, list: maybe, on: withMaybe, set: setWithMaybe, dot: 'bg-amber-300', name: 'Maybe', desc: t('Meragukan, lirik sekilas', 'Uncertain, quick glance') },
-    { id: 'rejects' as const, list: rejects, on: withRejects, set: setWithRejects, dot: 'bg-red-400', name: 'Rejects', desc: t('Gagal, buang dari katalog', 'Failed, drop from catalog') },
+    { id: 'picks' as const, list: picks, on: withPicks, set: setWithPicks, dot: 'bg-[#2f7a3d]', name: 'Picks', desc: t('Terbaik, layak edit', 'Best shots, worth editing') },
+    { id: 'maybe' as const, list: maybe, on: withMaybe, set: setWithMaybe, dot: 'bg-[#8a6d00]', name: 'Maybe', desc: t('Meragukan, lirik sekilas', 'Uncertain, quick glance') },
+    { id: 'rejects' as const, list: rejects, on: withRejects, set: setWithRejects, dot: 'bg-[#a93226]', name: 'Rejects', desc: t('Gagal, buang dari katalog', 'Failed, drop from catalog') },
   ]
   const selected = [
     ...(withPicks ? picks.map(p=>({ filePath: p.filePath, pairedPath: p.pairedPath, sub: splitFolders ? 'Picks' : undefined })) : []),
@@ -86,7 +86,7 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      className="w7-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
       onClick={()=> { if (!moving) onClose() }}
       role="presentation"
     >
@@ -94,44 +94,46 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
         role="dialog"
         aria-modal="true"
         aria-label={t('Pindah file hasil pilahan', 'Move culled files')}
-        className="w-full max-w-sm rounded-md border border-flow-500 bg-flow-800 p-5"
+        className="w7-dialog w-full max-w-sm overflow-hidden"
         onClick={(e)=> e.stopPropagation()}
       >
+        <div className="w7-dialog-title px-4 py-2 font-sans text-[13px] font-bold">
+          {t('Pindah file hasil pilahan', 'Move culled files')}
+        </div>
+        <div className="p-4">
         {result ? (
           <div className="flex flex-col items-center gap-3 py-2" role="status">
-            <span className={`flex h-12 w-12 items-center justify-center rounded-full border-2 font-mono text-xl font-bold ${result.failed.length === 0 ? 'border-emerald-400 bg-emerald-400/10 text-emerald-300' : 'border-amber-300 bg-amber-300/10 text-amber-200'}`} aria-hidden="true">
+            <span className={`flex h-12 w-12 items-center justify-center rounded-full border-2 font-sans text-xl font-bold ${result.failed.length === 0 ? 'border-[#2f7a3d] bg-[#e7f3ea] text-[#0f3d1a]' : 'border-[#8a6d00] bg-[#faf3d7] text-[#4d3d00]'}`} aria-hidden="true">
               {result.failed.length === 0 ? '✓' : '!'}
             </span>
-            <div className="text-center font-mono text-[13px] font-bold text-white">
+            <div className="text-center font-sans text-[13px] font-bold">
               {result.failed.length === 0
                 ? t(`Berhasil! ${result.moved} foto dipindah.`, `Success! Moved ${result.moved} photos.`)
                 : t(`Terpindah ${result.moved}/${result.total} foto.`, `Moved ${result.moved}/${result.total} photos.`)}
             </div>
             {result.breakdown && (
-              <div className="font-mono text-[11px] tabular-nums text-zinc-400">{result.breakdown}</div>
+              <div className="w7-muted w7-num font-sans text-[11px]">{result.breakdown}</div>
             )}
-            <div className="w-full truncate rounded border border-flow-700 bg-black/30 px-3 py-2 text-center font-mono text-[11px] text-zinc-500">{result.dest}</div>
+            <div className="w7-field w-full truncate px-3 py-2 text-center font-sans text-[11px] text-[#5b6b7a]">{result.dest}</div>
             {result.failed.length > 0 && (
-              <div className="max-h-28 w-full overflow-auto rounded border border-red-500/40 bg-red-500/10 p-3 font-mono text-[11px] text-red-300">
+              <div className="w7-field max-h-28 w-full overflow-auto p-3 font-sans text-[11px] text-[#5e1a12]">
                 {result.failed.map((f, i)=> <div key={i} className="truncate">{f.file ? `${f.file} — ` : ''}{f.error}</div>)}
               </div>
             )}
             <div className="mt-1 flex w-full gap-2">
-              <button onClick={()=> window.ohmyflow.showInFolder(result.dest)} className="flex-1 rounded border border-flow-500 px-4 py-2 font-mono text-[11px] font-bold text-zinc-200 transition hover:border-zinc-400 hover:text-white">
-                {t('[ Lihat Folder ]', '[ Open Folder ]')}
+              <button onClick={()=> window.ohmyflow.showInFolder(result.dest)} className="w7-btn flex-1 px-4 py-2 font-sans text-[11px] font-bold">
+                {t('Lihat Folder', 'Open Folder')}
               </button>
-              <button onClick={()=> { appStore.resetSession(); onClose() }} autoFocus className="flex-1 rounded border border-emerald-400 bg-emerald-400 px-4 py-2 font-mono text-[11px] font-bold text-black transition hover:bg-emerald-300">
-                {t('[ Lanjut → ]', '[ Continue → ]')}
+              <button onClick={()=> { appStore.resetSession(); onClose() }} autoFocus className="w7-btn w7-btn-green flex-1 px-4 py-2 font-sans text-[11px] font-bold">
+                {t('Lanjut →', 'Continue →')}
               </button>
             </div>
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            <div className="font-mono text-[13px] font-bold text-white">{t('Pindah file hasil pilahan', 'Move culled files')}</div>
-
             <button
               onClick={pickDest}
-              className="w-full truncate rounded border border-dashed border-flow-500 px-4 py-3 font-mono text-[11px] text-zinc-200 transition hover:border-zinc-400 hover:text-white"
+              className="w7-drop w-full truncate px-4 py-3 font-sans text-[11px]"
             >
               {destDir ?? t('Pilih folder tujuan…', 'Choose destination folder…')}
             </button>
@@ -147,15 +149,15 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
                     disabled={empty}
                     onClick={()=> c.set(!c.on)}
                     aria-pressed={c.on}
-                    className={`flex items-center gap-3 rounded border p-3 text-left transition ${empty ? 'cursor-not-allowed border-flow-700 opacity-40' : active ? 'border-white bg-flow-700' : 'border-flow-600 hover:border-zinc-400'}`}
+                    className={`w7-btn items-center gap-3 p-3 text-left ${active ? 'w7-btn-primary' : ''} ${empty ? 'opacity-40' : ''}`}
                   >
-                    <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border text-[10px] font-bold ${active ? 'border-white bg-white text-black' : 'border-zinc-500 text-transparent'}`} aria-hidden="true">✓</span>
-                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${c.dot}`} aria-hidden="true" />
+                    <span className={`flex h-4 w-4 shrink-0 items-center justify-center border border-[#5f7a93] bg-white text-[10px] font-bold ${active ? 'text-[#12324f]' : 'text-transparent'}`} aria-hidden="true">✓</span>
+                    <span className={`h-2.5 w-2.5 shrink-0 ${c.dot}`} aria-hidden="true" />
                     <span className="min-w-0 flex-1">
-                      <span className="block font-mono text-[12px] font-bold text-white">
-                        {c.name} <span className="tabular-nums font-normal text-zinc-400">({c.list.length})</span>
+                      <span className="block font-sans text-[12px] font-bold">
+                        {c.name} <span className="w7-num font-normal text-[#5b6b7a]">({c.list.length})</span>
                       </span>
-                      <span className="block truncate font-mono text-[10px] text-zinc-500">{c.desc}</span>
+                      <span className="block truncate font-sans text-[10px] text-[#5b6b7a]">{c.desc}</span>
                     </span>
                   </button>
                 )
@@ -164,41 +166,42 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
                 type="button"
                 onClick={()=> setSplitFolders(!splitFolders)}
                 aria-pressed={splitFolders}
-                className={`flex items-center gap-3 rounded border border-dashed p-3 text-left transition ${splitFolders ? 'border-white bg-flow-700' : 'border-flow-600 hover:border-zinc-400'}`}
+                className={`w7-btn items-center gap-3 p-3 text-left ${splitFolders ? 'w7-btn-primary' : ''}`}
               >
-                <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border text-[10px] font-bold ${splitFolders ? 'border-white bg-white text-black' : 'border-zinc-500 text-transparent'}`} aria-hidden="true">✓</span>
+                <span className={`flex h-4 w-4 shrink-0 items-center justify-center border border-[#5f7a93] bg-white text-[10px] font-bold ${splitFolders ? 'text-[#12324f]' : 'text-transparent'}`} aria-hidden="true">✓</span>
                 <span className="min-w-0 flex-1">
-                  <span className="block font-mono text-[12px] font-bold text-white">{t('Buat Folder Terpisah', 'Separate Folders')}</span>
-                  <span className="block truncate font-mono text-[10px] text-zinc-500">Picks / Maybe / Rejects</span>
+                  <span className="block font-sans text-[12px] font-bold">{t('Buat Folder Terpisah', 'Separate Folders')}</span>
+                  <span className="block truncate font-sans text-[10px] text-[#5b6b7a]">Picks / Maybe / Rejects</span>
                 </span>
               </button>
             </div>
 
-            <div className="rounded border border-flow-700 bg-black/30 px-3 py-2 font-mono text-[11px] tabular-nums text-zinc-300">
+            <div className="w7-field w7-num px-3 py-2 font-sans text-[11px]">
               {selected.length === 0
                 ? t('Pilih minimal satu kategori.', 'Select at least one category.')
                 : perSub
                   ? t(`${selected.length} foto → ${perSub}`, `${selected.length} photos → ${perSub}`)
                   : t(`${selected.length} foto → satu folder`, `${selected.length} photos → one folder`)}
-              <div className="mt-0.5 text-[10px] text-zinc-500">
+              <div className="mt-0.5 text-[10px] text-[#5b6b7a]">
                 {t('RAW+JPG dan .xmp ikut · Nama kembar diberi nomor.', 'RAW+JPG pairs and .xmp follow · Duplicate names get numbered.')}
               </div>
             </div>
 
             <div className="flex justify-end gap-2">
-              <button onClick={onClose} disabled={moving} className="rounded px-4 py-2 font-mono text-[11px] font-bold text-zinc-500 transition hover:text-white disabled:opacity-50">
-                {t('[ Batal ]', '[ Cancel ]')}
+              <button onClick={onClose} disabled={moving} className="w7-btn px-4 py-2 font-sans text-[11px] font-bold disabled:opacity-50">
+                {t('Batal', 'Cancel')}
               </button>
               <button
                 onClick={doMove}
                 disabled={!canMove}
-                className="rounded border border-white bg-white px-5 py-2 font-mono text-[11px] font-bold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:border-flow-600 disabled:bg-transparent disabled:text-zinc-500"
+                className="w7-btn w7-btn-primary px-5 py-2 font-sans text-[11px] font-bold disabled:opacity-40"
               >
-                {moving ? t('Memindahkan…', 'Moving…') : t(`[ Pindah ${selected.length} ]`, `[ Move ${selected.length} ]`)}
+                {moving ? t('Memindahkan…', 'Moving…') : t(`Pindah ${selected.length}`, `Move ${selected.length}`)}
               </button>
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   )

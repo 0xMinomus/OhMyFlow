@@ -7,22 +7,25 @@
   "type": "commonjs",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && npm run copy:ort",
+    "build": "tsc && vite build && npm run copy:ort && node scripts/copy-mediapipe.cjs && node scripts/build-engine-eval.cjs",
     "copy:ort": "node scripts/copy-ort.cjs",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "dev:electron": "npm run build:electron && concurrently \"vite --host\" \"wait-on http://localhost:5173 && electron dist-electron/main.js\"",
     "build:electron": "tsc -p tsconfig.electron.json",
     "start": "electron dist-electron/main.js",
-    "pack": "npm run build && npm run build:electron && electron-packager . OhMyFlow --platform=win32 --arch=x64 --out=release --overwrite --prune --ignore=\"^/(test-photos|release|dist-electron/electron|src|scripts|public|electron|DIGICAM|FIX KERAMIK|bulbah|Foto OSIS skvela|MEMORY\\.md|ARCHITECTURE\\.md|PRODUCT\\.md|PLAN\\.md|fase-update\\.md|new-architecture\\.md|opencode\\.json|\\.gitignore|\\.gitattributes|tsconfig.*|postcss\\.config\\.cjs|tailwind\\.config\\.cjs|vite\\.config\\.ts)\" --icon=build/icon.ico",
+    "pack": "npm run build && npm run build:electron && electron-packager . OhMyFlow --platform=win32 --arch=x64 --out=release --overwrite --prune --ignore=\"^/(test-photos|sample|eval|\\.engine-eval|release|dist-electron/electron|src|scripts|public|electron|DIGICAM|FIX KERAMIK|bulbah|Foto OSIS skvela|MEMORY\\.md|ARCHITECTURE\\.md|PRODUCT\\.md|PLAN\\.md|fase-update\\.md|new-architecture\\.md|opencode\\.json|\\.gitignore|\\.gitattributes|tsconfig.*|postcss\\.config\\.cjs|tailwind\\.config\\.cjs|vite\\.config\\.ts)\" --icon=build/icon.ico",
     "pack:legacy": "npm run build && npm run build:electron && electron-builder --dir",
     "dist": "npm run build && npm run build:electron && electron-builder",
-    "dist:win": "npm run build && npm run build:electron && electron-builder --win --x64"
+    "dist:win": "npm run build && npm run build:electron && electron-builder --win --x64",
+    "test:engine": "node scripts/test-engine.cjs",
+    "eval:electron": "node scripts/run-engine-eval.cjs"
   },
   "dependencies": {
     "sharp": "^0.33.4"
   },
   "devDependencies": {
+    "@mediapipe/tasks-vision": "0.10.32",
     "@types/node": "^20.12.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",

@@ -37,15 +37,15 @@ export function LazyThumb({ item, className }: { item: PhotoItem; className?: st
 
   if (url === null) {
     return (
-      <div ref={ref} className="w-full h-full flex flex-col items-center justify-center gap-1 bg-flow-900 px-3">
-        <span className="text-[11px] font-bold tracking-widest text-zinc-300">RAW · {item.ext.replace('.', '').toUpperCase()}</span>
-        <span className="text-[11px] text-zinc-400 truncate w-full text-center">{item.fileName}</span>
+      <div ref={ref} className="flex h-full w-full flex-col items-center justify-center gap-1 bg-[#e8eff5] px-3">
+        <span className="font-sans text-[11px] font-bold tracking-widest">RAW · {item.ext.replace('.', '').toUpperCase()}</span>
+        <span className="w7-muted w-full truncate text-center font-sans text-[11px]">{item.fileName}</span>
       </div>
     )
   }
 
   if (url === undefined) {
-    return <div ref={ref} className="w-full h-full bg-flow-900 animate-pulse" aria-hidden="true" />
+    return <div ref={ref} className="h-full w-full animate-pulse bg-[#dbe5ee]" aria-hidden="true" />
   }
 
   return (

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useStore, appStore } from '@/store/useAppStore'
-import { cullPhotos } from '@/lib/ai-engine/culler'
+import { runEngine } from '@/lib/ai-engine-v2/pipeline'
 import { ANALYSIS_IMAGE_SIZE, V2_ANALYSIS_IMAGE } from '@/lib/ai-engine/pipeline'
 import { prefetchThumbsBatch, getMemThumb, prefetchAnalysisBatch } from '@/lib/thumbCache'
 
@@ -79,7 +79,13 @@ export function CullingView() {
       }
 
       const baseW = useAnalysis ? 0.6 : 0.6
-      const culled = await cullPhotos(withThumbs, {
+      const config = await window.ohmyflow.getEngineConfig()
+      const provider = config.engine !== 'legacy'
+        ? new (await import('@/lib/ai-engine-v2/face/mediapipe-provider')).MediaPipeFaceProvider()
+        : undefined
+      const culled = await runEngine(withThumbs, {
+        engine: config.engine,
+        provider,
         mode,
         shouldCancel: () => cancelRef.current,
         onProgress: (done,total)=> {
@@ -93,6 +99,10 @@ export function CullingView() {
         appStore.setStep('select')
         return
       }
+
+      try {
+        await window.ohmyflow.saveEngineTrace(culled.map(p => JSON.stringify((p as any).engineTrace)).join('\n') + '\n')
+      } catch (traceError) { console.error('[OhMyFlow] diagnostic write failed:', traceError) }
 
       const dt = performance.now()-t0
       const picks = culled.filter(p=>p.category==='picks').length
@@ -118,17 +128,16 @@ export function CullingView() {
     return (
       <div className="flex flex-col gap-3 px-1 py-1" aria-live="polite">
         <div className="flex items-center gap-3">
-          <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-flow-500 border-t-white" aria-hidden="true" />
-          <span className="font-mono text-[13px] font-bold text-white tabular-nums">
+          <span className="w7-num font-sans text-[13px] font-bold">
             {progress.label ? `${progress.label} ` : `${t('Memilah', 'Culling')} `}{progress.done}/{progress.total}
           </span>
-          <span className="ml-auto font-mono text-[11px] tabular-nums text-zinc-500">{pct}%</span>
+          <span className="w7-muted w7-num ml-auto font-sans text-[11px]">{pct}%</span>
         </div>
-        <div className="h-1 overflow-hidden rounded-full bg-flow-900" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-          <div className="h-full bg-emerald-400 transition-all" style={{ width: pct+'%' }} />
+        <div className="w7-progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+          <div style={{ width: pct+'%' }} />
         </div>
-        <button onClick={()=>{ cancelRef.current = true }} className="self-start font-mono text-[11px] font-bold text-zinc-500 transition hover:text-white">
-          {t('[ Batal ]', '[ Cancel ]')}
+        <button onClick={()=>{ cancelRef.current = true }} className="w7-btn self-start px-3 py-1 font-sans text-[11px] font-bold">
+          {t('Batal', 'Cancel')}
         </button>
       </div>
     )
@@ -137,16 +146,16 @@ export function CullingView() {
   return (
     <div className="flex flex-col gap-3">
       {error && (
-        <div className="rounded-sm border border-red-500/40 bg-red-500/10 p-3" role="alert">
-          <div className="font-mono text-[13px] font-bold text-red-300">{t('Proses gagal.', 'Process failed.')}</div>
-          <div className="mt-1 break-all font-mono text-[11px] text-red-300/80">{error}</div>
-          <button onClick={()=>setError(null)} className="mt-2 rounded-sm border border-flow-500 px-3 py-1 font-mono text-[11px] font-bold text-zinc-200 transition hover:text-white">
-            {t('[ Tutup ]', '[ Dismiss ]')}
+        <div className="w7-card p-3" role="alert">
+          <div className="font-sans text-[13px] font-bold text-[#5e1a12]">{t('Proses gagal.', 'Process failed.')}</div>
+          <div className="mt-1 break-all font-sans text-[11px] text-[#5e1a12]">{error}</div>
+          <button onClick={()=>setError(null)} className="w7-btn mt-2 px-3 py-1 font-sans text-[11px] font-bold">
+            {t('Tutup', 'Dismiss')}
           </button>
         </div>
       )}
-      <div className="flex items-center justify-between gap-4 flex-wrap min-h-[44px]">
-        <p className="flex items-start gap-1.5 font-mono text-[11px] leading-snug text-zinc-500 max-w-[60%]">
+      <div className="flex min-h-[44px] flex-wrap items-center justify-between gap-4">
+        <p className="w7-muted flex max-w-[60%] items-start gap-1.5 font-sans text-[11px] leading-snug">
           <span className="mt-0.5 shrink-0"><InfoIcon /></span>
           <span>
             {lang==='id'
@@ -157,9 +166,9 @@ export function CullingView() {
         <button
           disabled={photos.length===0}
           onClick={start}
-          className="shrink-0 w-48 rounded-sm border border-emerald-400 bg-emerald-400 px-4 py-2 font-mono text-[13px] font-bold text-black transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:border-flow-600 disabled:bg-flow-700 disabled:opacity-40"
+          className="w7-btn w7-btn-green w-48 shrink-0 px-4 py-2 font-sans text-[13px] font-bold disabled:opacity-40"
         >
-          {t('[ Mulai Culling → ]', '[ Start Culling → ]')}
+          {t('Mulai Culling →', 'Start Culling →')}
         </button>
       </div>
     </div>

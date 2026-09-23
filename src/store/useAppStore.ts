@@ -41,6 +41,7 @@ interface AppState {
   photos: PhotoItem[]
   sensitivity: Sensitivity
   language: 'id' | 'en'
+  theme: 'win7' | 'win98' | 'mac'
   step: Step
   cullingProgress: { done:number, total:number, label?:string } | null
   stats: CullStats | null
@@ -53,6 +54,7 @@ interface AppState {
   setPhotos: (p:PhotoItem[])=>void
   setSensitivity: (s:Sensitivity)=>void
   setLanguage: (l:'id'|'en')=>void
+  setTheme: (t:'win7'|'win98'|'mac')=>void
   setStep: (s:Step)=>void
   setProgress: (p:{done:number,total:number,label?:string}|null)=>void
   setStats: (s:CullStats|null)=>void
@@ -65,6 +67,15 @@ interface AppState {
   updatePhotoCategory: (id:string, cat: 'picks'|'maybe'|'rejects')=>void
   removePhotos: (ids:string[])=>void
   resetSession: ()=>void
+}
+
+function loadTheme(): 'win7' | 'win98' | 'mac' {
+  try {
+    const raw = localStorage.getItem('ohmyflow-theme')
+    return raw === 'win7' || raw === 'mac' ? raw : 'win98'
+  } catch {
+    return 'win98'
+  }
 }
 
 function loadPadbinds(): Padbinds {
@@ -89,6 +100,7 @@ let state: AppState = {
   photos: [],
   sensitivity: 'balanced',
   language: 'id',
+  theme: loadTheme(),
   step: 'select',
   cullingProgress: null,
   stats: null,
@@ -100,6 +112,7 @@ let state: AppState = {
   setPhotos: (p)=>{ state.photos=p; emit() },
   setSensitivity: (s)=>{ state.sensitivity=s; emit() },
   setLanguage: (l)=>{ state.language=l; emit() },
+  setTheme: (t)=>{ state.theme=t; try { localStorage.setItem('ohmyflow-theme', t) } catch {}; emit() },
   setStep: (s)=>{ state.step=s; emit() },
   setProgress: (p)=>{ state.cullingProgress=p; emit() },
   setStats: (s)=>{ state.stats=s; emit() },

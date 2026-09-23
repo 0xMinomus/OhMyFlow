@@ -13,6 +13,10 @@ FIX KERAMIK/
 bulbah/
 Foto OSIS skvela/
 sample/
+.engine-eval/
+eval/runs/
+eval/manifest.jsonl
+eval/labels/
 
 # ── Log ──────────────────────────────────────────────────────
 *.log

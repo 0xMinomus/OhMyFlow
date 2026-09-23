@@ -5,6 +5,17 @@ import { createHash } from 'crypto'
 import { extname, basename, dirname } from 'path'
 
 let mainWindow: BrowserWindow | null = null
+// Explicit local CLI evaluation, using the same app:// runtime and IPC decoders.
+const evalArgument = process.argv.find(arg => arg.startsWith('--engine-eval='))
+const evalJob = evalArgument ? JSON.parse(readFileSync(evalArgument.slice('--engine-eval='.length), 'utf8')) : null
+if (evalJob) {
+  ipcMain.handle('engine:evalJob', () => evalJob)
+  ipcMain.handle('engine:evalComplete', (_event, result) => {
+    writeFileSync(evalJob.output, JSON.stringify(result))
+    setTimeout(() => app.quit(), 50)
+    return true
+  })
+}
 
 // Skema privileged untuk renderer (standard + fetchable). Wajib sebelum ready.
 protocol.registerSchemesAsPrivileged([{
@@ -39,9 +50,11 @@ function createWindow() {
     icon: join(__dirname, '../build/icon.ico')
   })
 
-  mainWindow.once('ready-to-show', () => mainWindow?.show())
+  mainWindow.once('ready-to-show', () => { if (!evalJob) mainWindow?.show() })
 
-  if (process.env.VITE_DEV_SERVER_URL) {
+  if (evalJob) {
+    mainWindow.loadURL('app://app/engine-eval.html')
+  } else if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
   } else {
     mainWindow.loadURL('app://app/index.html')
@@ -87,6 +100,18 @@ app.on('activate', () => {
 })
 
 // ---- IPC ----
+
+ipcMain.handle('engine:config', () => ({
+  engine: ['legacy', 'v2-shadow', 'v2-active'].includes(process.env.OHMYFLOW_ENGINE || '') ? process.env.OHMYFLOW_ENGINE : 'legacy',
+}))
+ipcMain.handle('engine:saveTrace', (_event, jsonl: string) => {
+  if (typeof jsonl !== 'string' || Buffer.byteLength(jsonl) > 50 * 1024 * 1024) throw new Error('TRACE_TOO_LARGE')
+  const dir = join(app.getPath('userData'), 'diagnostics')
+  mkdirSync(dir, { recursive: true })
+  const path = join(dir, 'latest.jsonl')
+  writeFileSync(path, jsonl, 'utf8')
+  return path
+})
 
 ipcMain.handle('dialog:openFolder', async () => {
   if (!mainWindow) return null
