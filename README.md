@@ -54,7 +54,8 @@ All of the AI runs **on your own machine** using ONNX Runtime plus classic compu
 
 - Windows 10/11, 64-bit
 - [Node.js](https://nodejs.org/) 24 or newer (only needed to build from source)
-- Everything runs on CPU. No GPU, account, or internet needed.
+- Photo processing runs on CPU. No GPU or account is needed, and the app runs offline after setup.
+- Downloading a release or installing the dependencies to build from source requires internet access.
 
 ### Run the release build (no tools needed)
 
@@ -69,7 +70,7 @@ It is portable and needs no installation. If Windows SmartScreen appears (the ap
 ```bash
 git clone https://github.com/0xMinomus/OhMyFlow.git
 cd OhMyFlow
-npm install
+npm ci
 
 # development mode with hot reload
 npm run dev
@@ -78,12 +79,14 @@ npm run dev
 npm run pack
 ```
 
+`npm ci` installs the dependency versions recorded in `package-lock.json`. For a local build without packaging, run `npm run build` and then `npm start`. The build writes the renderer to `dist/`, the Electron main process and preload script to `dist-electron/`, and copies the ONNX runtime files into `dist/ort/`.
+
 | Command | What it does |
 |---------|--------------|
 | `npm run dev` | Vite dev server plus Electron with hot reload |
-| `npm run build` | Type-check and build the renderer and main process |
+| `npm run build` | Type-check, build the renderer and Electron scripts, and copy the ONNX runtime files |
 | `npm run pack` | Full build plus packaging into `release/OhMyFlow-win32-x64/OhMyFlow.exe` |
-| `npm start` | Run the built output in `dist/` without packaging |
+| `npm start` | Launch `dist-electron/main.js` using the existing build; run `npm run build` first |
 
 > Tip: for a quick end-to-end tour after `npm run dev`, point the app at the `test-photos/` folder (sample images included in this repo).
 
