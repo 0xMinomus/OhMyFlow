@@ -2,6 +2,27 @@ export type Sensitivity = 'fast' | 'balanced' | 'high'
 
 export type CullCategory = 'picks' | 'maybe' | 'rejects'
 
+// Bentuk struktural ringkasan ONNX — sengaja tidak mengimpor src/lib agar
+// types tetap bebas runtime dan tidak menimbulkan siklus.
+export interface OnnxFaceBox {
+  box: { x: number; y: number; w: number; h: number }
+  score: number
+}
+
+export interface OnnxFaceSummaryLike {
+  available: boolean
+  count: number
+  maxScore: number
+  maxArea: number
+  boxes: OnnxFaceBox[]
+}
+
+export interface Pass2EyeResult {
+  eyesState: string
+  eyesClosedProbability: number
+  boxArea: number
+}
+
 export interface PhotoItem {
   id: string
   fileName: string
@@ -31,6 +52,48 @@ export interface PhotoItem {
   duplicateGroup?: string
   aesthetic?: number
   composition?: number
+  // Diagnostik engine (diisi culler/pipeline; semua opsional — jangan dipakai UI langsung)
+  dhash?: string // dHash 64-bit untuk grouping duplikat
+  reasonCodes?: string[]
+  subjFocus?: number | null // ketajaman zona subjek (null = tak ada eviden)
+  motion?: number
+  onnxFace?: OnnxFaceSummaryLike | null
+  onnxDominantUnknown?: boolean
+  pass2?: Pass2EyeResult | null
+  eyeHi?: unknown
+  pupilHits?: number
+  objMode?: boolean
+  whiteBg?: boolean
+  hasFace?: boolean
+  faceConfidence?: number
+  clippedHi?: number
+  clippedLo?: number
+  centerHi?: number
+  meanLum?: number
+  hiPct?: number
+  borderHi?: number
+  loPct?: number
+  maxEdge?: number
+  compConfidence?: number
+  subject?: number // skor ketajaman area subjek (0-100), bukan box
+  edge?: number
+  gradP50?: number
+  gradP99?: number
+  color?: number
+  accidental?: boolean
+  eyesState?: 'open' | 'closed' | 'unknown' | 'no-face' | ''
+  eyesP?: number
+  eyesOpenProtect?: boolean
+  skinRatio?: number
+  blurFloor?: number
+  blurReject?: boolean
+  v2cap?: '' | 'maybe' | 'reject'
+  clusterRank?: number
+  clusterSize?: number
+  marginToBest?: number
+  softestInBurst?: boolean
+  redundantDiverse?: boolean
+  redundantInBurst?: boolean
 }
 
 export interface CullStats {

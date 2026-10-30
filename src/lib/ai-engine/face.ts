@@ -287,7 +287,7 @@ export function heuristicFaceDetect(imageData: ImageData, opts?: { sharpness?: n
   const rowSorted = [...rowDark].sort((a, b) => b - a)
   const rowConc = darkTotal > 0 ? (rowSorted[0] + (rowSorted[1] ?? 0)) / darkTotal : 0
   // GT-2026-09: statistik R = restricted dekat-kulit (bebas banjir rambut).
-  // Simetri dihitung dari centroid massa sendiri (wajah miring/โมเมน).
+  // Simetri dihitung dari centroid massa sendiri (wajah miring/momen).
   const rDarkTotal = rDarkL + rDarkR
   const rDarkRatio = rDarkTotal / total2
   let rColSum = 0, rColXSum = 0
@@ -327,16 +327,6 @@ export function heuristicFaceDetect(imageData: ImageData, opts?: { sharpness?: n
   // permukaan beige mulus (keramik!) juga tidak punya pupil. Dinding bukti:
   // thinLines + darkRatio ≥ 0.01 = garis bulu mata nyata (pupil jauh yang samar
   // berada di bawah 0.01 → jatuh ke unknown = aman).
-  // GT-DEBUG sementara: set GT_DEBUG=1 untuk intip statistik kanal mata.
-  if (typeof process !== 'undefined' && process.env && process.env.GT_DEBUG && hasFace) {
-    try {
-      console.error(`[GT_DEBUG] rDark=${rDarkRatio.toFixed(4)} rSym=${rSymmetric} ` +
-        `rHit=${rHitL}/${rHitR} ` +
-        `rC=${rLineConc.toFixed(2)} rCent=${(rDarkCentroidY - bandY0).toFixed(0)} ` +
-        `U(dark=${darkRatio.toFixed(4)} tall=${tallL}/${tallR} runW=${runWL}/${runWR}) ` +
-        `sharp=${sharp} skin=${skinRatio.toFixed(3)} fc=${faceConfidence.toFixed(2)}`)
-    } catch {}
-  }
 
   let p = 0.3
   let eyesState: FaceResult['eyesState'] = 'unknown'
