@@ -4,7 +4,7 @@
 
 | Version | Supported |
 |---------|-----------|
-| 1.0.x   | Yes       |
+| 1.2.x   | Yes       |
 
 ## Offline by Design
 
@@ -29,6 +29,9 @@ OhMyFlow processes everything on your own machine:
   `Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy` headers, and the
   handler only serves files inside the app bundle (path traversal blocked,
   GET only).
+- Known gaps, stated plainly: the `BrowserWindow` runs with `sandbox: false`
+  because the preload script needs Node APIs, and there is no explicit Content
+  Security Policy yet.
 
 ## File Safety
 
@@ -43,9 +46,11 @@ OhMyFlow processes everything on your own machine:
 ## AI Model Supply Chain
 
 - Face model: UltraFace RFB-320 (MIT licensed), bundled at
-  `public/models/ultraface-320.onnx` with a recorded SHA-256 checksum.
-- If the model or WebAssembly runtime fails to load, the app silently falls
-  back to the built-in heuristics. A model failure can never crash culling.
+  `public/models/ultraface-320.onnx` with a recorded SHA-256 checksum that is
+  verified when the model loads. A mismatch counts as a load failure.
+- If the model or WebAssembly runtime fails to load — including a checksum
+  mismatch — the app silently falls back to the built-in heuristics. A model
+  failure can never crash culling.
 
 ## Reporting a Vulnerability
 

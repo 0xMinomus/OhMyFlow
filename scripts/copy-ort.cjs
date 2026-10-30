@@ -1,13 +1,28 @@
 // Copy ONNX wasm runtime ke dist/ort (dipakai face-onnx.ts via wasmPaths './ort/').
+// Allowlist ketat: runtime cuma butuh varian threaded (numThreads=1, EP wasm).
+// Usage: node scripts/copy-ort.cjs [--dest dir|--dest=dir]
 const fs = require('fs');
 const path = require('path');
+
+const FILES = ['ort-wasm-simd-threaded.wasm', 'ort-wasm-simd-threaded.mjs'];
 const src = path.join(__dirname, '..', 'node_modules', 'onnxruntime-web', 'dist');
-const dst = path.join(__dirname, '..', 'dist', 'ort');
-fs.mkdirSync(dst, { recursive: true });
-let n = 0;
-for (const f of fs.readdirSync(src)) {
-  if (!f.endsWith('.wasm') && !f.endsWith('.mjs')) continue;
-  fs.copyFileSync(path.join(src, f), path.join(dst, f));
-  n++;
+const eq = process.argv.find((a) => a.startsWith('--dest='));
+const i = process.argv.indexOf('--dest');
+const arg = eq ? eq.slice('--dest='.length) : i !== -1 ? process.argv[i + 1] : '';
+const dst = arg ? path.resolve(arg) : path.join(__dirname, '..', 'dist', 'ort');
+
+if (!fs.existsSync(src)) {
+  console.error(`ort source tidak ada: ${src} — jalankan npm ci dulu`);
+  process.exit(1);
 }
-console.log(`ort wasm copied: ${n} files`);
+fs.mkdirSync(dst, { recursive: true });
+for (const f of FILES) {
+  const from = path.join(src, f);
+  if (!fs.existsSync(from)) {
+    console.error(`ort file tidak ada: ${from}`);
+    process.exit(1);
+  }
+  fs.copyFileSync(from, path.join(dst, f));
+  console.log(`copied ${f}`);
+}
+console.log(`ort wasm copied: ${FILES.length} files → ${dst}`);

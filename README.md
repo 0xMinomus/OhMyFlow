@@ -2,7 +2,7 @@
   <img src="public/ohmyflow.jpg" alt="OhMyFlow — AI photo culler for Windows" />
   <p><strong>AI photo culler for Windows. Pick your best shots 10x faster, 100% offline.</strong></p>
   <p>
-    <img src="https://img.shields.io/badge/version-1.0.0-blue" alt="version" />
+    <img src="https://img.shields.io/badge/version-1.2.0-blue" alt="version" />
     <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4" alt="platform" />
     <img src="https://img.shields.io/badge/runtime-Electron-47848F" alt="electron" />
     <img src="https://img.shields.io/badge/AI-100%25%20on--device-success" alt="on-device AI" />
@@ -113,7 +113,7 @@ Estimates are computed by the app from your photo count and shown next to each m
 
 ### Portable Release
 
-1. Open the [Releases](https://github.com/0xMinomus/OhMyFlow/releases/latest) page and download the latest portable build (currently `OhMyFlow-v1.2-portable-win32-x64.zip`, around 143 MB).
+1. Open the [Releases](https://github.com/0xMinomus/OhMyFlow/releases/latest) page and download the latest portable build (currently `OhMyFlow-v1.2-portable-win32-x64.zip`).
 2. Right-click the zip, choose **Extract All**, and pick a destination folder.
 3. Open the extracted folder and double-click **`OhMyFlow.exe`**.
 
@@ -135,29 +135,35 @@ npm run pack
 
 `npm ci` installs exactly the dependency versions recorded in `package-lock.json`. The build writes the renderer to `dist/`, the Electron main process and preload script to `dist-electron/`, and the ONNX Runtime WebAssembly files to `dist/ort/`.
 
-> Tip: for a quick end-to-end tour, point the app at the `test-photos/` folder — sample images are included in this repository.
+> Tip: `test-photos/` holds solid-colour test images for smoke-testing the UI — not real photos for judging culling quality.
 
 ### Command Reference
 
 | Command | What it does |
 |---------|--------------|
-| `npm run dev` | Vite dev server on port 5173 plus Electron; hot reload for the UI and an automatic restart for the main process |
-| `npm run build` | Type-check with `tsc`, build the renderer to `dist/`, build the main process and preload to `dist-electron/`, and copy the ONNX runtime files to `dist/ort/` |
-| `npm run build:electron` | Build only the Electron main process and preload script |
+| `npm run dev` | Vite dev server on port 5173; the Electron plugin launches the app, hot-reloads the UI, and restarts the main process on change |
+| `npm run typecheck` | Type-check the renderer and preload (`tsconfig.json`) plus the Electron main process (`tsconfig.electron.json`) |
+| `npm run build` | Type-check both projects, build the renderer to `dist/`, build the main process and preload to `dist-electron/`, and copy the ONNX runtime files to `dist/ort/` |
+| `npm run build:electron` | Compile the Electron main process and preload to `dist-electron/main.js` and `dist-electron/preload.js` |
 | `npm start` | Launch `dist-electron/main.js` from an existing build — run `npm run build` first |
 | `npm run preview` | Preview the production renderer build |
 | `npm run pack` | Full build plus `electron-packager` output for Windows x64 in `release/OhMyFlow-win32-x64/` |
+| `npm run pack:linux` | Full build plus `electron-packager` output for Linux x64 in `release/OhMyFlow-linux-x64/` |
 | `npm run dist:win` | Full build plus an `electron-builder` NSIS installer for Windows x64 |
+| `npm run dist:linux` | Full build plus `electron-builder` AppImage and deb packages for Linux |
 
 ## Supported File Formats
 
 | Category | Extensions |
 |----------|-----------|
 | Standard | `.jpg` `.jpeg` `.png` `.tiff` `.tif` `.webp` `.bmp` |
-| Apple | `.heic` `.heif` |
 | RAW | `.cr2` `.cr3` `.nef` `.arw` `.raf` `.dng` `.rw2` `.orf` `.pef` |
 
-`.xmp` files are ignored during scanning, so existing sidecars never show up as photos. RAW files without an embedded JPEG preview are still processed and clearly marked, and their ratings are written to XMP like any other photo.
+`.xmp` files are ignored during scanning, so existing sidecars never show up as photos.
+
+`.heic` / `.heif` is experimental: decoding needs an HEVC decoder from libheif, and the official sharp builds do not necessarily ship one. Files that fail to decode land in Maybe.
+
+RAW files without an embedded JPEG preview are flagged and land in Maybe — they are not analysed. Ratings are still written to XMP like any other photo.
 
 ## XMP Export and Lightroom Integration
 
@@ -188,8 +194,10 @@ For the full security model, including the model supply chain and path-traversal
 ```
 OhMyFlow/
 ├── electron/
-│   ├── main.ts          # Main process: IPC, folder scan, RAW+JPG pairing,
-│   │                    #   thumbnail and analysis caches, XMP writer, file mover
+│   ├── main.ts          # Main process: IPC, thumbnail and analysis caches,
+│   │                    #   XMP writing, file moving
+│   ├── scan.ts          # Folder scan, supported extensions, RAW+JPG pairing
+│   ├── xmp.ts           # XMP sidecar builder (rating, label, keywords)
 │   └── preload.ts       # Secure renderer-to-main bridge (contextBridge)
 ├── src/
 │   ├── components/      # UI: folder picker, mode selector, grid, lightbox,
@@ -200,6 +208,7 @@ OhMyFlow/
 │   │   │                #   culler (orchestration plus per-mode presets)
 │   │   ├── ml/          # Local ONNX face detector (fail-safe) and eye ROI helpers
 │   │   ├── gamepad.ts   # Controller support (no dependencies)
+│   │   ├── version.ts   # Single source of truth for APP_VERSION
 │   │   └── thumbCache.ts
 │   ├── store/           # App state: settings, keybinds, controller binds
 │   └── types/
@@ -207,8 +216,8 @@ OhMyFlow/
 │   ├── models/          # Bundled ONNX face model (MIT licensed)
 │   └── *.jpg, *.png     # Banner, app logo, hero image
 ├── scripts/             # ONNX WebAssembly copy helper and the evaluation harness
-├── build/               # icon.ico and Windows packaging assets
-└── test-photos/         # Sample photos for a quick trial run
+├── build/               # Icons (ico/png) and packaging assets
+└── test-photos/         # Solid-colour images for UI smoke tests
 ```
 
 ## Engine Evaluation Harness

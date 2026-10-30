@@ -20,7 +20,7 @@ function parseCsv(text) {
   if (cur.length > 1 || cur[0] !== '') rows.push(cur)
   return rows
 }
-const [header, ...lines] = parseCsv(readFileSync(resolve(args.eval || join('sample', 'eval-high.csv')), 'utf-8'))
+const [header, ...lines] = parseCsv(readFileSync(resolve(args.eval || join(__dirname, '..', 'sample', 'eval-high.csv')), 'utf-8'))
 const rows = lines.filter((l) => l.length > 1).map((l) => Object.fromEntries(header.map((h, i) => [h, l[i] ?? ''])))
 const show = (r) => `${r.file} H=${r.human} AI=${r.ai} s=${r.score} f=${r.focus} face=${r.hasFace}${+r.objMode ? ' OBJ' : ''} eyes=${r.aiEyes || '-'}(${r.aiEyeP}) eyeTag=${r.eyeClosed} best=${r.best} [${r.reasons}]`
 const sec = (t, list) => { console.log(`\n=== ${t} (n=${list.length}) ===`); list.forEach((r) => console.log(show(r))) }
