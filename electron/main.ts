@@ -1,8 +1,9 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } from 'electron'
-import { join, normalize } from 'path'
+import { join, normalize, resolve, extname, basename, dirname } from 'path'
 import { existsSync, readdirSync, statSync, writeFileSync, readFileSync, unlinkSync, mkdirSync, renameSync, copyFileSync } from 'fs'
 import { createHash } from 'crypto'
-import { extname, basename, dirname } from 'path'
+import { scanFolder, RAW_EXTS } from './scan'
+import { buildXmp, type XmpMeta } from './xmp'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -12,16 +13,11 @@ protocol.registerSchemesAsPrivileged([{
   privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
 }])
 
-const SUPPORTED_EXTS = new Set([
-  '.jpg', '.jpeg', '.png', '.tiff', '.tif', '.webp', '.bmp',
-  '.heic', '.heif',
-  '.cr2', '.cr3', '.nef', '.arw', '.raf', '.dng', '.rw2', '.orf', '.pef',
-  '.xmp' // to ignore
-])
-
-const RAW_EXTS = new Set(['.cr2', '.cr3', '.nef', '.arw', '.raf', '.dng', '.rw2', '.orf', '.pef'])
-
 function createWindow() {
+  // icon per platform: Linux butuh .png, Windows .ico. Jangan set bila file tidak ada.
+  const iconPath = process.platform === 'linux'
+    ? join(__dirname, '../build/icon.png')
+    : join(__dirname, '../build/icon.ico')
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -36,7 +32,7 @@ function createWindow() {
       sandbox: false,
     },
     show: false,
-    icon: join(__dirname, '../build/icon.ico')
+    ...(existsSync(iconPath) ? { icon: iconPath } : {})
   })
 
   mainWindow.once('ready-to-show', () => mainWindow?.show())
@@ -98,95 +94,9 @@ ipcMain.handle('dialog:openFolder', async () => {
 })
 
 ipcMain.handle('fs:scanFolder', async (_e, folderPath: string) => {
-  try {
-    const entries = readdirSync(folderPath)
-    // O(n) index: pre-build jpg basename set to avoid O(n^2) find
-    const jpgBases = new Set<string>()
-    const entryExt = new Map<string, string>()
-    for (const e of entries) {
-      const ex = extname(e).toLowerCase()
-      entryExt.set(e, ex)
-      if (ex === '.jpg' || ex === '.jpeg') {
-        jpgBases.add(basename(e, ex).toLowerCase())
-      }
-    }
-
-    const map = new Map<string, any>()
-    for (const entry of entries) {
-      const full = join(folderPath, entry)
-      let stat: any
-      try { stat = statSync(full) } catch { continue }
-      if (stat.isDirectory()) continue
-      const ext = entryExt.get(entry)!
-      if (ext === '.xmp') continue
-      if (!SUPPORTED_EXTS.has(ext)) continue
-
-      const base = basename(entry, ext)
-      const key = base.toLowerCase()
-
-      if (RAW_EXTS.has(ext)) {
-        if (jpgBases.has(key)) {
-          // RAW+JPG pair — cari file JPG pasangannya (O(1) via set, ambil satu)
-          const jpgPair = entries.find(e => basename(e, extname(e).toLowerCase()) === key && (extname(e).toLowerCase() === '.jpg' || extname(e).toLowerCase() === '.jpeg'))
-          // Fallback aman jika find gagal (seharusnya tidak)
-          const pairedFile = jpgPair ? join(folderPath, jpgPair) : undefined
-          // Baca stat paired untuk previewPath (dipakai thumbnail)
-          let previewPath = pairedFile
-          if (!map.has(key)) {
-            map.set(key, {
-              id: key + '_rawjpg',
-              fileName: entry,
-              filePath: full,
-              pairedPath: pairedFile,
-              previewPath: previewPath, // renderer pakai ini untuk thumbnail
-              isPaired: true,
-              isRaw: true,
-              ext,
-              size: stat.size,
-              baseName: base,
-              mtimeMs: stat.mtimeMs
-            })
-          }
-        } else {
-          if (!map.has(key)) map.set(key, {
-            id: key,
-            fileName: entry,
-            filePath: full,
-            isPaired: false,
-            isRaw: true,
-            ext,
-            size: stat.size,
-            baseName: base,
-            mtimeMs: stat.mtimeMs
-          })
-        }
-      } else {
-        if (map.has(key) && map.get(key).isPaired) continue
-        const id = map.has(key) ? key + '_' + ext : key
-        const rec = {
-          id,
-          fileName: entry,
-          filePath: full,
-          previewPath: full,
-          isPaired: false,
-          isRaw: false,
-          ext,
-          size: stat.size,
-          baseName: base,
-          mtimeMs: stat.mtimeMs
-        }
-        if (!map.has(key)) map.set(key, rec)
-        else map.set(id, rec)
-      }
-    }
-
-    const files = [...map.values()]
-    files.sort((a,b)=> a.fileName.localeCompare(b.fileName))
-    return files
-  } catch (e:any) {
-    console.error(e)
-    return []
-  }
+  // Logika scan + pairing RAW/JPG ada di electron/scan.ts (fs/promises, key lowercase).
+  // Error folder (ENOENT/EACCES) dibiarkan reject agar renderer tahu, bukan array kosong.
+  return scanFolder(folderPath)
 })
 
 // ---- Thumbnail pipeline: ringan, cached, async ----
@@ -250,6 +160,7 @@ ipcMain.handle('fs:getAnalysisBatch', async (_e, items: { filePath: string, prev
   const sliced = (items || []).slice(0, 12)
   const out: Record<string, { dataUrl: string | null, isRaw?: boolean, error?: string }> = {}
   const queue = [...sliced]
+  const cacheDir = analysisCacheDir() // hoist: jangan mkdir per item
   async function worker() {
     while (queue.length) {
       const it = queue.shift()!
@@ -260,7 +171,7 @@ ipcMain.handle('fs:getAnalysisBatch', async (_e, items: { filePath: string, prev
         let stat: any
         try { stat = statSync(src) } catch { out[it.filePath] = { dataUrl: null, error: 'not-found' }; continue }
         const key = thumbKey(`${src}|a${size}`, stat.size, stat.mtimeMs)
-        const cachePath = join(analysisCacheDir(), key + '.jpg')
+        const cachePath = join(cacheDir, key + '.jpg')
         if (existsSync(cachePath)) {
           try {
             const cached = readFileSync(cachePath)
@@ -311,6 +222,7 @@ ipcMain.handle('fs:getThumbnailsBatch', async (_e, items: { filePath: string, pr
   const out: Record<string, { dataUrl: string | null, isRaw?: boolean, error?: string }> = {}
   // concurrency 4 agar disk tidak thrashing
   const queue = [...sliced]
+  const cacheDir = thumbCacheDir() // hoist: jangan mkdir per item
   async function worker() {
     while (queue.length) {
       const it = queue.shift()!
@@ -321,7 +233,7 @@ ipcMain.handle('fs:getThumbnailsBatch', async (_e, items: { filePath: string, pr
         let stat: any
         try { stat = statSync(src) } catch { out[it.filePath] = { dataUrl: null, error: 'not-found' }; continue }
         const key = thumbKey(src, stat.size, stat.mtimeMs)
-        const cachePath = join(thumbCacheDir(), key + '.jpg')
+        const cachePath = join(cacheDir, key + '.jpg')
         if (existsSync(cachePath)) {
           try {
             const cached = readFileSync(cachePath)
@@ -342,33 +254,49 @@ ipcMain.handle('fs:getThumbnailsBatch', async (_e, items: { filePath: string, pr
 
 ipcMain.handle('fs:clearThumbCache', async () => {
   try {
-    const { readdirSync: rs, unlinkSync: ul } = await import('fs')
-    const dir = thumbCacheDir()
-    const files = rs(dir)
-    let n = 0
-    for (const f of files) { try { ul(join(dir, f)); n++ } catch {} }
-    return { ok: true, cleared: n }
-  } catch (e:any) { return { ok: false, error: e.message } }
+    // kosongkan isi kedua cache (folder tetap ada)
+    const cleared = { thumbs: 0, analysis: 0 }
+    for (const [name, dir] of [['thumbs', thumbCacheDir()], ['analysis', analysisCacheDir()]] as const) {
+      for (const f of readdirSync(dir)) {
+        try { unlinkSync(join(dir, f)); cleared[name]++ } catch {}
+      }
+    }
+    return { ok: true, cleared }
+  } catch (e) {
+    return { ok: false, cleared: { thumbs: 0, analysis: 0 }, error: e instanceof Error ? e.message : String(e) }
+  }
 })
 
 ipcMain.handle('fs:readImageAsDataUrl', async (_e, filePath: string) => {
+  const ext = extname(filePath).toLowerCase()
   try {
-    const ext = extname(filePath).toLowerCase()
-    // For RAW, we can't decode, return null and renderer will show placeholder
-    if (RAW_EXTS.has(ext)) {
-      // Try to find embedded JPG? For now return null
-      return { dataUrl: null, isRaw: true, ext }
+    // RAW tidak bisa didecode Chromium → renderer menampilkan placeholder
+    if (RAW_EXTS.has(ext)) return { dataUrl: null, isRaw: true, ext }
+
+    // format yang langsung dirender Chromium: baca apa adanya
+    const webMime: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+      '.gif': 'image/gif',
     }
-    const buf = readFileSync(filePath)
-    const mime =
-      ext === '.png' ? 'image/png' :
-      ext === '.webp' ? 'image/webp' :
-      ext === '.tiff' || ext === '.tif' ? 'image/tiff' :
-      'image/jpeg'
-    const base64 = buf.toString('base64')
-    return { dataUrl: `data:${mime};base64,${base64}`, isRaw: false, ext }
-  } catch (e) {
-    return { dataUrl: null, error: String(e) }
+    const mime = webMime[ext]
+    if (mime) {
+      const buf = readFileSync(filePath)
+      return { dataUrl: `data:${mime};base64,${buf.toString('base64')}`, isRaw: false, ext }
+    }
+
+    // tiff/bmp/heic/heif/… tidak dirender Chromium → decode via sharp ke JPEG.
+    // Import dinamis: sharp berat, jangan dibebankan saat startup main process.
+    const sharp = (await import('sharp')).default
+    const buf = await sharp(filePath, { failOnError: false })
+      .rotate()
+      .jpeg({ quality: 90 })
+      .toBuffer()
+    return { dataUrl: `data:image/jpeg;base64,${buf.toString('base64')}`, isRaw: false, ext }
+  } catch {
+    return { dataUrl: null, isRaw: false, error: 'decode-failed', ext }
   }
 })
 
@@ -384,68 +312,75 @@ ipcMain.handle('fs:writeXmp', async (_e, filePath: string, xmpContent: string) =
   }
 })
 
-ipcMain.handle('fs:writeXmpsBulk', async (_e, items: { filePath: string, rating: number, label: string, pairedPath?: string }[]) => {
+ipcMain.handle('fs:writeXmpsBulk', async (_e, items: { filePath: string, rating: number, label: string, pairedPath?: string }[], opts?: { overwrite?: boolean }) => {
+  const list = Array.isArray(items) ? items : []
+  const overwrite = opts?.overwrite === true
+  const handled = new Set<string>() // path xmp yang sudah ditulis/di-skip → jangan tulis dua kali
+  const errors: { file: string, error: string }[] = []
   let ok = 0
-  for (const it of items) {
-    const rating = it.rating
-    const label = it.label // Green/Yellow/Red
-    const xmp = `<?xml version="1.0" encoding="UTF-8"?>
-<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="OhMyFlow">
- <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
-  <rdf:Description rdf:about=""
-    xmlns:xmp="http://ns.adobe.com/xap/1.0/"
-    xmlns:xmpRights="http://ns.adobe.com/xap/1.0/rights/"
-    xmlns:dc="http://purl.org/dc/elements/1.1/"
-    xmlns:xmp:Rating="${rating}"
-    xmlns:lr="http://ns.adobe.com/lightroom/1.0/">
-   <xmp:Rating>${rating}</xmp:Rating>
-   <xmp:Label>${label}</xmp:Label>
-   <lr:hierarchicalSubject>
-    <rdf:Bag><rdf:li>OhMyFlow/${label}</rdf:li></rdf:Bag>
-   </lr:hierarchicalSubject>
-  </rdf:Description>
- </rdf:RDF>
-</x:xmpmeta>`
-    try {
-      const base = basename(it.filePath, extname(it.filePath))
-      const dir = dirname(it.filePath)
-      writeFileSync(join(dir, base + '.xmp'), xmp, 'utf-8')
-      if (it.pairedPath) {
-        const base2 = basename(it.pairedPath, extname(it.pairedPath))
-        writeFileSync(join(dir, base2 + '.xmp'), xmp, 'utf-8')
+  let skipped = 0
+
+  for (const it of list) {
+    // RAW+JPG berbagi basename → sidecar yang sama; Set mencegah tulis ganda
+    const srcs = [it.filePath, it.pairedPath].filter((p): p is string => !!p)
+    for (const src of srcs) {
+      const xmpPath = join(dirname(src), basename(src, extname(src)) + '.xmp')
+      if (handled.has(xmpPath)) continue
+      handled.add(xmpPath)
+      try {
+        // default: jangan timpa sidecar yang sudah ada (bisa berisi edit Lightroom)
+        if (existsSync(xmpPath) && !overwrite) { skipped++; continue }
+        const tmp = xmpPath + '.tmp'
+        writeFileSync(tmp, buildXmp({ rating: it.rating, label: it.label as XmpMeta['label'] }), 'utf-8')
+        renameSync(tmp, xmpPath) // atomik dalam direktori yang sama
+        ok++
+      } catch (e) {
+        errors.push({ file: src, error: e instanceof Error ? e.message : String(e) })
+        try { unlinkSync(xmpPath + '.tmp') } catch {}
       }
-      ok++
-    } catch {}
+    }
   }
-  return { ok, total: items.length }
+  // total = jumlah sidecar unik yang diproses (ok + skipped + gagal)
+  return { ok, skipped, total: ok + skipped + errors.length, errors }
 })
+
+// resolve() dulu; Windows case-insensitive
+function sameDir(a: string, b: string): boolean {
+  const ra = resolve(a)
+  const rb = resolve(b)
+  return process.platform === 'win32' ? ra.toLowerCase() === rb.toLowerCase() : ra === rb
+}
 
 ipcMain.handle('fs:movePhotos', async (_e, payload: { items: { filePath: string, pairedPath?: string, sub?: string }[], destDir: string }) => {
   const items = payload?.items ?? []
   const destDir = payload?.destDir
-  if (!destDir) return { ok: false, moved: 0, movedPaths: [], failed: [], total: items.length, error: 'no-dest' }
-  try { mkdirSync(destDir, { recursive: true }) } catch (e: any) {
-    return { ok: false, moved: 0, movedPaths: [], failed: [], total: items.length, error: String(e?.message || e) }
+  const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e))
+  if (!destDir) return { ok: false, moved: 0, skipped: 0, movedPaths: [], failed: [], total: items.length, error: 'no-dest' }
+  try { mkdirSync(destDir, { recursive: true }) } catch (e) {
+    return { ok: false, moved: 0, skipped: 0, movedPaths: [], failed: [], total: items.length, error: errMsg(e) }
   }
 
+  // reserve nama tujuan agar dua job tidak mendapat path yang sama
+  const reserved = new Set<string>()
   function uniqueDest(dir: string, name: string): string {
     const ext = extname(name)
     const base = basename(name, ext)
     let candidate = join(dir, name)
     let n = 1
-    while (existsSync(candidate)) {
+    while (existsSync(candidate) || reserved.has(candidate)) {
       candidate = join(dir, `${base} (${n})${ext}`)
       n++
     }
+    reserved.add(candidate)
     return candidate
   }
 
   function moveOne(src: string, dest: string) {
     try {
       renameSync(src, dest)
-    } catch (e: any) {
-      if (e?.code === 'EXDEV') {
-        // beda drive/partisi → salin lalu hapus
+    } catch (e) {
+      // Node melempar ErrnoException; EXDEV = beda drive/partisi → salin lalu hapus
+      if ((e as NodeJS.ErrnoException).code === 'EXDEV') {
         copyFileSync(src, dest)
         unlinkSync(src)
       } else throw e
@@ -454,30 +389,33 @@ ipcMain.handle('fs:movePhotos', async (_e, payload: { items: { filePath: string,
 
   const movedPaths: string[] = []
   const failed: { file: string, error: string }[] = []
+  let skipped = 0
 
   for (const it of items) {
+    const pairFiles = [it.filePath, it.pairedPath].filter((p): p is string => !!p)
     try {
       if (!existsSync(it.filePath)) throw new Error('file-tidak-ditemukan')
       // Subfolder per kategori ("Buat Folder Terpisah"): Picks/Maybe/Rejects.
       // basename() = anti traversal, mkdir rekursif.
       const dir = it.sub ? join(destDir, basename(it.sub)) : destDir
       try { mkdirSync(dir, { recursive: true }) } catch {}
-      // sudah di folder tujuan → anggap beres tanpa menyentuh
-      if (dirname(it.filePath) === dir && (!it.pairedPath || dirname(it.pairedPath) === dir)) {
-        movedPaths.push(it.filePath)
+      // sudah di folder tujuan → skip, jangan hitung moved
+      if (pairFiles.every((f) => sameDir(dirname(f), dir))) {
+        skipped++
         continue
       }
+      // hitung semua destinasi dulu (reservasi), baru pindahkan
       const jobs: [string, string][] = []
       const destMain = uniqueDest(dir, basename(it.filePath))
       jobs.push([it.filePath, destMain])
-      if (it.pairedPath && existsSync(it.pairedPath) && dirname(it.pairedPath) !== dir) {
+      if (it.pairedPath && existsSync(it.pairedPath) && !sameDir(dirname(it.pairedPath), dir)) {
         jobs.push([it.pairedPath, uniqueDest(dir, basename(it.pairedPath))])
       }
       // .xmp pendamping ikut pindah, mengikuti nama file tujuannya.
       // RAW+JPG berbagi basename → xmp yang sama; dedupe agar tidak dipindah dua kali.
       const seenXmp = new Set<string>()
-      for (const src of [it.filePath, it.pairedPath].filter(Boolean) as string[]) {
-        if (dirname(src) === dir) continue
+      for (const src of pairFiles) {
+        if (sameDir(dirname(src), dir)) continue
         const xmpSrc = join(dirname(src), basename(src, extname(src)) + '.xmp')
         const xmpKey = xmpSrc.toLowerCase()
         if (!existsSync(xmpSrc) || seenXmp.has(xmpKey)) continue
@@ -486,13 +424,29 @@ ipcMain.handle('fs:movePhotos', async (_e, payload: { items: { filePath: string,
         const destBase = pairedJob ? basename(pairedJob[1], extname(pairedJob[1])) : basename(src, extname(src))
         jobs.push([xmpSrc, uniqueDest(dir, destBase + '.xmp')])
       }
-      for (const [s, d] of jobs) moveOne(s, d)
+      // satu item = beberapa job; gagal satu job → catat nama yang gagal, jangan rollback
+      let itemFailed = false
+      for (const [s, d] of jobs) {
+        try { moveOne(s, d) } catch (e) {
+          failed.push({ file: basename(s), error: errMsg(e) })
+          itemFailed = true
+        }
+      }
+      if (itemFailed) {
+        // pasangan (RAW+JPG) ditampilkan sebagai satu entri → catat kedua nama
+        const err = failed[failed.length - 1].error
+        for (const f of pairFiles) {
+          const name = basename(f)
+          if (!failed.some((x) => x.file === name)) failed.push({ file: name, error: err })
+        }
+        continue
+      }
       movedPaths.push(it.filePath)
-    } catch (e: any) {
-      failed.push({ file: basename(it.filePath), error: String(e?.message || e) })
+    } catch (e) {
+      failed.push({ file: basename(it.filePath), error: errMsg(e) })
     }
   }
-  return { ok: true, moved: movedPaths.length, movedPaths, failed, total: items.length }
+  return { ok: true, moved: movedPaths.length, skipped, movedPaths, failed, total: items.length }
 })
 
 ipcMain.handle('shell:showInFolder', async (_e, filePath: string) => {
