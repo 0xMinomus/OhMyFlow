@@ -2,7 +2,8 @@
 // Usage: node scripts/eval-gt.cjs [--split human|nonhuman|all] [--limit N] [--mode high]
 // Output: sample/eval-<mode>.csv + metrik ke stdout + hash determinisme.
 // Decode via sharp (bukan browser); skoring/vonis = kode produksi identik.
-const { readdirSync, statSync, writeFileSync, existsSync } = require('fs')
+const { readdirSync, statSync, writeFileSync, existsSync, mkdirSync, unlinkSync } = require('fs')
+const os = require('os')
 const { join, resolve, basename, extname } = require('path')
 
 const args = Object.fromEntries(
@@ -20,14 +21,7 @@ if (NO_GT) SPLITS.splice(0, SPLITS.length, 'osis')
 const OUTDIR = NO_GT ? resolve(join(__dirname, '..', 'sample')) : ROOT
 const norm = (f) => basename(f).replace(/ \(\d+\)(?=\.[^.]+$)/, '')
 
-async function main() {
-  const esbuild = require('esbuild')
-  const bundlePath = join(ROOT, '.harness-bundle.cjs')
-  await esbuild.build({
-    entryPoints: [join(__dirname, 'harness-entry.ts')],
-    bundle: true, platform: 'node', format: 'cjs',
-    outfile: bundlePath, logLevel: 'error',
-  })
+async function run(bundlePath) {
   const { cullPhotos, analyzeImageData } = require(bundlePath)
   const sharp = require('sharp')
 
@@ -105,7 +99,9 @@ async function main() {
     }
   }
 
+  if (allRows.length === 0) throw new Error('tidak ada file gambar di ' + ROOT)
   const csvPath = join(OUTDIR, NO_GT ? `eval-${MODE}-dist.csv` : `eval-${MODE}.csv`)
+  mkdirSync(OUTDIR, { recursive: true })
   const cols = Object.keys(allRows[0])
   writeFileSync(csvPath, cols.join(',') + '\n' + allRows.map((r) =>
     cols.map((c) => { const v = String(r[c]); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v }).join(',')
@@ -163,6 +159,22 @@ async function main() {
   const s = allRows.map((r) => `${r.file}|${r.ai}|${r.score}`).sort().join(';')
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0
   console.log(`\nDeterminism hash: ${(h >>> 0).toString(16)} (bandingkan antar-run)`)
+}
+
+async function main() {
+  const esbuild = require('esbuild')
+  // Bundle di tmpdir: jangan tinggalkan artefak di folder sumber/sample.
+  const bundlePath = join(os.tmpdir(), `ohmyflow-harness-${process.pid}.cjs`)
+  await esbuild.build({
+    entryPoints: [join(__dirname, 'harness-entry.ts')],
+    bundle: true, platform: 'node', format: 'cjs',
+    outfile: bundlePath, logLevel: 'error',
+  })
+  try {
+    await run(bundlePath)
+  } finally {
+    try { unlinkSync(bundlePath) } catch {}
+  }
 }
 
 main().catch((e) => { console.error('EVAL GAGAL:', e.message); process.exit(1) })

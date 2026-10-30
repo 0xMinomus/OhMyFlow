@@ -7,17 +7,19 @@
   "type": "commonjs",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && npm run copy:ort",
+    "predev": "node scripts/copy-ort.cjs --dest public/ort",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "build": "npm run typecheck && vite build && npm run copy:ort",
     "copy:ort": "node scripts/copy-ort.cjs",
     "preview": "vite preview",
-    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "dev:electron": "npm run build:electron && concurrently \"vite --host\" \"wait-on http://localhost:5173 && electron dist-electron/main.js\"",
     "build:electron": "tsc -p tsconfig.electron.json",
     "start": "electron dist-electron/main.js",
-    "pack": "npm run build && npm run build:electron && electron-packager . OhMyFlow --platform=win32 --arch=x64 --out=release --overwrite --prune --ignore=\"^/(test-photos|release|dist-electron/electron|src|scripts|public|electron|DIGICAM|FIX KERAMIK|bulbah|Foto OSIS skvela|MEMORY\\.md|ARCHITECTURE\\.md|PRODUCT\\.md|PLAN\\.md|fase-update\\.md|new-architecture\\.md|opencode\\.json|\\.gitignore|\\.gitattributes|tsconfig.*|postcss\\.config\\.cjs|tailwind\\.config\\.cjs|vite\\.config\\.ts)\" --icon=build/icon.ico",
+    "pack": "npm run build && npm run build:electron && electron-packager . OhMyFlow --platform=win32 --arch=x64 --out=release --overwrite --prune --ignore=\"^/(test-photos|sample|release|dist-electron/electron|src|scripts|public|electron|DIGICAM|FIX KERAMIK|bulbah|Foto OSIS skvela|\\.code-graph|\\.git|\\.gitignore|\\.gitattributes|tsconfig.*|postcss\\.config\\.cjs|tailwind\\.config\\.cjs|vite\\.config\\.ts)\" --icon=build/icon.ico",
+    "pack:linux": "npm run build && npm run build:electron && electron-packager . OhMyFlow --platform=linux --arch=x64 --out=release --overwrite --prune --ignore=\"^/(test-photos|sample|release|dist-electron/electron|src|scripts|public|electron|DIGICAM|FIX KERAMIK|bulbah|Foto OSIS skvela|\\.code-graph|\\.git|\\.gitignore|\\.gitattributes|tsconfig.*|postcss\\.config\\.cjs|tailwind\\.config\\.cjs|vite\\.config\\.ts)\" --icon=build/icon.png",
     "pack:legacy": "npm run build && npm run build:electron && electron-builder --dir",
     "dist": "npm run build && npm run build:electron && electron-builder",
-    "dist:win": "npm run build && npm run build:electron && electron-builder --win --x64"
+    "dist:win": "npm run build && npm run build:electron && electron-builder --win --x64",
+    "dist:linux": "npm run build && electron-builder --linux"
   },
   "dependencies": {
     "sharp": "^0.33.4"
@@ -49,6 +51,7 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
+      "build/icon.*",
       "package.json"
     ],
     "directories": {
@@ -58,6 +61,12 @@
     "win": {
       "target": "nsis",
       "icon": "build/icon.ico"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Graphics",
+      "icon": "build/icon-512.png",
+      "maintainer": "0xMinomus"
     },
     "nsis": {
       "oneClick": false,

@@ -6,6 +6,8 @@ dist/
 dist-electron/
 release/
 *.tsbuildinfo
+public/ort/
+.code-graph/
 
 # ── Foto pribadi (besar & privat — JANGAN PERNAH di-commit) ──
 DIGICAM/
