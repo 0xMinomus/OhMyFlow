@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useStore, appStore } from '@/store/useAppStore'
 import type { PhotoItem } from '@/types'
 import { LazyThumb } from './LazyThumb'
+import { getMemThumb } from '@/lib/thumbCache'
 import { MoveModal } from './MoveModal'
 import { Lightbox } from './Lightbox'
 import { Fieldset } from './Fieldset'
@@ -14,20 +15,22 @@ function useImageDims(item: PhotoItem): string {
   const key = item.previewPath || item.filePath
   const [dims, setDims] = useState<string>(() => dimsCache.get(key) ?? '')
   useEffect(() => {
-    if (dimsCache.has(key)) { setDims(dimsCache.get(key)!); return }
-    let dead = false
-    const src = item.thumbUrl ?? undefined
+    const cached = dimsCache.get(key)
+    if (cached) { setDims(d => (d === cached ? d : cached)); return }
+    setDims(d => (d === '' ? d : '')) // key berubah → buang dimensi lama
+    const src = item.thumbUrl ?? getMemThumb(item.filePath) ?? undefined
     if (!src) return
+    let dead = false
     const img = new Image()
     img.onload = () => {
       const v = `${img.naturalWidth} × ${img.naturalHeight}`
       dimsCache.set(key, v)
-      if (!dead) setDims(v)
+      if (!dead) setDims(d => (d === v ? d : v))
       img.src = ''
     }
     img.src = src
     return () => { dead = true }
-  }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, item.thumbUrl, item.filePath])
   return dims
 }
 
@@ -89,14 +92,14 @@ function PhotoCard({ p, lang, index, onOpen }: { p: PhotoItem; lang: 'id' | 'en'
           <LazyThumb item={p} className="w-full h-full object-cover" />
         </div>
         {(p.isPaired || (p.isRaw && !p.thumbUrl && !p.dataUrl)) && (
-          <span className="absolute bottom-1.5 right-1.5 rounded-sm bg-black/70 px-1.5 py-px text-[9px] font-bold text-zinc-300 border border-white/10 pointer-events-none">
+          <span className="absolute top-1.5 right-1.5 rounded-sm bg-black/70 px-1.5 py-px text-[9px] font-bold text-zinc-300 border border-white/10 pointer-events-none">
             {p.isPaired ? 'RAW+JPG' : 'RAW'}
           </span>
         )}
-        <div className="absolute bottom-1.5 left-1.5 right-1.5 hidden gap-1 group-hover:flex group-focus-within:flex">
-          <button disabled={p.category==='picks'} onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'picks') }} className="flex-1 rounded-sm bg-emerald-400 py-1 font-mono text-[10px] font-bold text-black disabled:cursor-not-allowed disabled:opacity-40">Picks</button>
-          <button disabled={p.category==='maybe'} onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'maybe') }} className="flex-1 rounded-sm bg-amber-300 py-1 font-mono text-[10px] font-bold text-black disabled:cursor-not-allowed disabled:opacity-40">Maybe</button>
-          <button disabled={p.category==='rejects'} onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'rejects') }} className="flex-1 rounded-sm bg-red-400 py-1 font-mono text-[10px] font-bold text-black disabled:cursor-not-allowed disabled:opacity-40">Reject</button>
+        <div className="absolute bottom-1.5 left-1.5 right-1.5 flex gap-1">
+          <button disabled={p.category==='picks'} aria-pressed={p.category==='picks'} aria-label={t('Tandai Picks', 'Mark Picks')} onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'picks') }} className="flex-1 rounded-sm bg-emerald-400 py-1 font-mono text-[10px] font-bold text-black disabled:cursor-not-allowed disabled:opacity-40">Picks</button>
+          <button disabled={p.category==='maybe'} aria-pressed={p.category==='maybe'} aria-label={t('Tandai Maybe', 'Mark Maybe')} onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'maybe') }} className="flex-1 rounded-sm bg-amber-300 py-1 font-mono text-[10px] font-bold text-black disabled:cursor-not-allowed disabled:opacity-40">Maybe</button>
+          <button disabled={p.category==='rejects'} aria-pressed={p.category==='rejects'} aria-label={t('Tandai Reject', 'Mark Reject')} onClick={(e)=>{ e.stopPropagation(); appStore.updatePhotoCategory(p.id,'rejects') }} className="flex-1 rounded-sm bg-red-400 py-1 font-mono text-[10px] font-bold text-black disabled:cursor-not-allowed disabled:opacity-40">Reject</button>
         </div>
       </div>
       <div className="px-2 py-1.5 flex flex-col">
@@ -249,20 +252,60 @@ export function PhotoGrid() {
 
 function ExportButton({ lang }: { lang: 'id' | 'en' }) {
   const photos = useStore(s=>s.photos)
+  const [busy, setBusy] = useState(false)
+  const [overwrite, setOverwrite] = useState(false)
+  const [status, setStatus] = useState<{ ok: boolean, lines: string[] } | null>(null)
+  const t = (id: string, en: string) => (lang==='id' ? id : en)
+
   const handle = async () => {
-    const items = photos.map(p=>{
+    // Foto tanpa kategori belum dipilah (mis. culling dibatalkan) → jangan diekspor.
+    const items = photos.filter(p=> p.category).map(p=>{
       const rating = p.category==='picks' ? 5 : p.category==='maybe' ? 3 : 1
       const label = p.category==='picks' ? 'Green' : p.category==='maybe' ? 'Yellow' : 'Red'
       return { filePath: p.filePath, pairedPath: p.pairedPath, rating, label }
     })
-    const res = await window.ohmyflow.writeXmpsBulk(items)
-    alert(lang==='id'
-      ? `Berhasil! ${res.ok}/${res.total} file XMP ditulis. Buka folder di Lightroom, rating langsung terbaca.`
-      : `Done! ${res.ok}/${res.total} XMP files written. Open the folder in Lightroom to see ratings.`)
+    if (items.length === 0) {
+      setStatus({ ok: false, lines: [t('Belum ada hasil untuk diekspor.', 'Nothing to export yet.')] })
+      return
+    }
+    setBusy(true)
+    setStatus(null)
+    try {
+      const res = await (window.ohmyflow.writeXmpsBulk as any)(items, { overwrite })
+      const lines = [t(
+        `${res?.ok ?? 0}/${res?.total ?? items.length} file XMP ditulis.`,
+        `${res?.ok ?? 0}/${res?.total ?? items.length} XMP files written.`,
+      )]
+      if (res?.skipped) lines.push(t(`${res.skipped} dilewati (sidecar sudah ada).`, `${res.skipped} skipped (sidecar already exists).`))
+      const errs: { file: string, error: string }[] = res?.errors ?? []
+      if (errs.length > 0) {
+        lines.push(t(`Gagal ${errs.length} file:`, `Failed ${errs.length} files:`))
+        for (const e of errs.slice(0, 3)) lines.push(`${e.file} — ${e.error}`)
+      }
+      setStatus({ ok: errs.length === 0, lines })
+    } catch (e: any) {
+      setStatus({ ok: false, lines: [t(`Ekspor gagal: ${e?.message ?? e}`, `Export failed: ${e?.message ?? e}`)] })
+    } finally {
+      setBusy(false)
+    }
   }
+
   return (
-    <button onClick={handle} className="rounded-sm border border-zinc-400 px-3.5 py-1.5 font-mono text-[11px] font-bold text-white transition hover:bg-white hover:text-black">
-      {lang==='id' ? '[ Ekspor XMP ]' : '[ Export XMP ]'}
-    </button>
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-center gap-2">
+        <label className="flex cursor-pointer items-center gap-1 font-mono text-[10px] text-zinc-400">
+          <input type="checkbox" checked={overwrite} onChange={(e)=> setOverwrite(e.target.checked)} className="h-3 w-3 accent-emerald-400" />
+          {t('Timpa XMP lama', 'Overwrite XMP')}
+        </label>
+        <button onClick={handle} disabled={busy} className="rounded-sm border border-zinc-400 px-3.5 py-1.5 font-mono text-[11px] font-bold text-white transition hover:bg-white hover:text-black disabled:opacity-50">
+          {busy ? '…' : lang==='id' ? '[ Ekspor XMP ]' : '[ Export XMP ]'}
+        </button>
+      </div>
+      {status && (
+        <div role="status" className={`max-w-[280px] break-words text-right font-mono text-[10px] ${status.ok ? 'text-zinc-400' : 'text-red-300'}`}>
+          {status.lines.map((l, i)=> <div key={i}>{l}</div>)}
+        </div>
+      )}
+    </div>
   )
 }

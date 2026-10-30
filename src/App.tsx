@@ -7,13 +7,15 @@ import { CullingView } from '@/components/CullingView'
 import { PhotoGrid } from '@/components/PhotoGrid'
 import { SENSITIVITY_MODES } from '@/components/SensitivitySelector'
 import { useStore, appStore } from '@/store/useAppStore'
+import { APP_VERSION } from '@/lib/version'
 
 export default function App() {
   useEffect(() => {
     const sync = () => {
       try {
         const pads = navigator.getGamepads ? navigator.getGamepads() : []
-        appStore.setPadConnected([...pads].some(p => p && p.connected))
+        const v = [...pads].some(p => p && p.connected)
+        if (appStore.padConnected !== v) appStore.setPadConnected(v)
       } catch {}
     }
     sync()
@@ -31,6 +33,7 @@ export default function App() {
   const padOn = useStore(s=> s.padConnected)
   const t = (id: string, en: string) => (lang==='id' ? id : en)
 
+  useEffect(() => { document.documentElement.lang = lang }, [lang])
   const hasPhotos = photos.length > 0
   const modeName = SENSITIVITY_MODES.find(m=>m.id===mode)?.name ?? mode
   const status = progress
@@ -65,7 +68,7 @@ export default function App() {
             {hasPhotos ? `${photos.length} ${t('foto', 'photos')} | Mode: ${modeName} | ${status}` : status}
           </span>
           <span className="shrink-0 hidden sm:flex items-center gap-1.5">
-            OhMyFlow v1.2
+            OhMyFlow v{APP_VERSION}
             <span className="text-zinc-600">|</span>
             {padOn && (<span className="text-emerald-400 font-bold">[PAD]</span>)}
             {padOn && (<span className="text-zinc-600">|</span>)}

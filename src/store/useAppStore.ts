@@ -1,4 +1,4 @@
-import type { PhotoItem, Sensitivity, CullStats } from '@/types'
+import type { PhotoItem, Sensitivity, CullStats, AppSettings } from '@/types'
 import type { Padbinds } from '@/lib/gamepad'
 import { DEFAULT_PADBINDS } from '@/lib/gamepad'
 
@@ -82,13 +82,26 @@ function loadPadbinds(): Padbinds {
   }
 }
 
+/** Bahasa + mode culling terakhir; nilai tak dikenal jatuh ke bawaan. */
+function loadSettings(): AppSettings {
+  const s: AppSettings = { language: 'id', sensitivity: 'balanced' }
+  try {
+    const lang = localStorage.getItem('ohmyflow-lang')
+    if (lang === 'id' || lang === 'en') s.language = lang
+    const mode = localStorage.getItem('ohmyflow-mode')
+    if (mode === 'fast' || mode === 'balanced' || mode === 'high') s.sensitivity = mode
+  } catch {}
+  return s
+}
+const saved = loadSettings()
+
 // simple zustand-like without dep if not installed, fallback
 let listeners: (()=>void)[]=[]
 let state: AppState = {
   folderPath: null,
   photos: [],
-  sensitivity: 'balanced',
-  language: 'id',
+  sensitivity: saved.sensitivity,
+  language: saved.language,
   step: 'select',
   cullingProgress: null,
   stats: null,
@@ -98,8 +111,8 @@ let state: AppState = {
   padConnected: false,
   setFolder: (p)=>{ state.folderPath=p; emit() },
   setPhotos: (p)=>{ state.photos=p; emit() },
-  setSensitivity: (s)=>{ state.sensitivity=s; emit() },
-  setLanguage: (l)=>{ state.language=l; emit() },
+  setSensitivity: (s)=>{ state.sensitivity=s; try { localStorage.setItem('ohmyflow-mode', s) } catch {}; emit() },
+  setLanguage: (l)=>{ state.language=l; try { localStorage.setItem('ohmyflow-lang', l) } catch {}; emit() },
   setStep: (s)=>{ state.step=s; emit() },
   setProgress: (p)=>{ state.cullingProgress=p; emit() },
   setStats: (s)=>{ state.stats=s; emit() },
@@ -131,22 +144,10 @@ let state: AppState = {
   setPadConnected: (v)=>{ state.padConnected=v; emit() },
   updatePhotoCategory: (id, cat)=>{ state.photos = state.photos.map(ph=> ph.id===id? {...ph, category:cat}:ph); if (state.stats) { const rest = state.photos; state.stats = { ...state.stats, picks: rest.filter(p=>p.category==='picks').length, maybe: rest.filter(p=>p.category==='maybe').length, rejects: rest.filter(p=>p.category==='rejects').length } } emit() },
   removePhotos: (ids)=>{ const gone = new Set(ids); state.photos = state.photos.filter(ph=> !gone.has(ph.id)); if (state.stats) { const rest = state.photos; state.stats = { ...state.stats, total: rest.length, picks: rest.filter(p=>p.category==='picks').length, maybe: rest.filter(p=>p.category==='maybe').length, rejects: rest.filter(p=>p.category==='rejects').length } } emit() },
-  resetSession: ()=>{ state.photos = []; state.stats = null; state.step = 'select'; state.selectedCategory = 'all'; state.cullingProgress = null; emit() },
+  resetSession: ()=>{ state.photos = []; state.stats = null; state.folderPath = null; state.step = 'select'; state.selectedCategory = 'all'; state.cullingProgress = null; emit() },
 }
 function emit(){ listeners.forEach(l=>l()) }
 
-export function useAppStore(): AppState {
-  // This is a minimal store without zustand dep - we manage via useSyncExternalStore
-  return state
-}
-export function useAppStoreSelector<T>(sel:(s:AppState)=>T): T {
-  const { useSyncExternalStore } = require('react')
-  return useSyncExternalStore(
-    (cb:()=>void)=>{ listeners.push(cb); return ()=>{ listeners = listeners.filter(l=>l!==cb)} },
-    ()=> sel(state),
-    ()=> sel(state)
-  )
-}
 // For simplicity, we will just import state directly and force update via hook
 import { useSyncExternalStore } from 'react'
 export function useStore<T>(selector:(s:AppState)=>T): T {

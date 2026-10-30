@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { useStore, appStore, DEFAULT_KEYBINDS, keyGlyph, type KeyAction } from '@/store/useAppStore'
+import { useStore, appStore, keyGlyph, type KeyAction } from '@/store/useAppStore'
 import { waitPadButton, firstPad, padKind, type PadAction } from '@/lib/gamepad'
 import { PadButton } from '@/components/PadButton'
+import { APP_VERSION } from '@/lib/version'
 
 function GearIcon() {
   return (
@@ -20,9 +21,33 @@ export function Header() {
   const [open, setOpen] = useState(false)
   const [capture, setCapture] = useState<KeyAction | null>(null)
   const [padCapture, setPadCapture] = useState<PadAction | null>(null)
+  const [cacheBusy, setCacheBusy] = useState(false)
+  const [cacheMsg, setCacheMsg] = useState<{ text: string, ok: boolean } | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const t = (id: string, en: string) => (lang==='id' ? id : en)
   const kind = padKind(padOn ? firstPad()?.id : undefined)
+
+  const clearCache = async () => {
+    setCacheBusy(true)
+    try {
+      const raw = await (window.ohmyflow.clearThumbCache() as any)
+      if (raw?.ok === false) {
+        setCacheMsg({ ok: false, text: t(`Gagal: ${raw?.error ?? 'tidak diketahui'}`, `Failed: ${raw?.error ?? 'unknown'}`) })
+      } else {
+        setCacheMsg({
+          ok: true,
+          text: t(
+            `Cache dibersihkan: ${raw?.cleared?.thumbs ?? 0} thumbnail, ${raw?.cleared?.analysis ?? 0} analisis`,
+            `Cache cleared: ${raw?.cleared?.thumbs ?? 0} thumbnails, ${raw?.cleared?.analysis ?? 0} analysis`,
+          ),
+        })
+      }
+    } catch (e: any) {
+      setCacheMsg({ ok: false, text: t(`Gagal: ${e?.message ?? e}`, `Failed: ${e?.message ?? e}`) })
+    } finally {
+      setCacheBusy(false)
+    }
+  }
 
   useEffect(() => {
     if (!open) return
@@ -49,7 +74,7 @@ export function Header() {
       e.stopPropagation()
       const reserved = ['ESCAPE', 'TAB', ' ']
       if (reserved.includes(e.key.toUpperCase())) { setCapture(null); return }
-      appStore.setKeybind(capture, e.key.length === 1 ? e.key : e.key)
+      appStore.setKeybind(capture, e.key)
       setCapture(null)
     }
     window.addEventListener('keydown', onKey, true)
@@ -70,7 +95,7 @@ export function Header() {
         />
         <div className="leading-tight min-w-0">
           <div className="font-mono text-xl font-bold text-white tracking-tight truncate">
-            OhMyFlow <span className="text-sm font-normal text-zinc-500">v1.2</span>
+            OhMyFlow <span className="text-sm font-normal text-zinc-500">v{APP_VERSION}</span>
           </div>
           <div className="font-mono text-xs text-zinc-500 truncate">Culling made simple.</div>
         </div>
@@ -211,6 +236,21 @@ export function Header() {
                   {t('[ Reset bawaan ]', '[ Reset defaults ]')}
                 </button>}
           </fieldset>
+        </div>
+        <div className="mt-3 rounded border border-flow-600 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-[11px] font-bold tracking-widest text-zinc-300">{t('[ CACHE ]', '[ CACHE ]')}</span>
+            <button
+              onClick={clearCache}
+              disabled={cacheBusy}
+              className="rounded-sm border border-flow-500 px-2.5 py-1 font-mono text-[11px] font-bold text-zinc-200 transition hover:border-zinc-400 hover:text-white disabled:opacity-50"
+            >
+              {cacheBusy ? '…' : t('[ Bersihkan cache ]', '[ Clear cache ]')}
+            </button>
+          </div>
+          {cacheMsg
+            ? <div role="status" className={`mt-1.5 break-all font-mono text-[10px] ${cacheMsg.ok ? 'text-zinc-400' : 'text-red-300'}`}>{cacheMsg.text}</div>
+            : <div className="mt-1.5 font-mono text-[10px] text-zinc-600">{t('Hapus thumbnail + gambar analisis tersimpan.', 'Delete cached thumbnails + analysis images.')}</div>}
         </div>
         <button
           onClick={()=> { setOpen(false); setCapture(null); setPadCapture(null) }}
