@@ -9,8 +9,8 @@ export const V2_ONNX = true
 // Flag Fase 6: Pass-2 eye ROI (High + unknown + box kecil saja).
 export const V2_PASS2 = true
 
-// ponytail: checksum dicatat, verifikasi penuh (reject bila mismatch) bila
-// model pernah di-update; loader menolak byte kosong/404 via magic number.
+// SHA-256 model yang dibundel, diverifikasi saat load (mismatch = load gagal
+// permanen → fallback heuristik, tak pernah crash). Update bila model diganti.
 export const FACE_MODEL_SHA256 = '34CD7E60AEFF28744C657DE7A3DC64E872D506741DE66987F3426F2B79F88017'
 
 export interface FaceDetection {
@@ -41,29 +41,53 @@ let session: any = null
 let loadFailed = false
 let chain: Promise<any> = Promise.resolve() // serialisasi session.run
 
+// SHA-256 hex uppercase; null bila crypto.subtle tak tersedia (konteks non-secure)
+// — verifikasi dilewati, jangan crash. Renderer memakai app:// (secure) → tersedia.
+async function sha256Hex(buf: ArrayBuffer): Promise<string | null> {
+  try {
+    const subtle = globalThis.crypto?.subtle
+    if (!subtle) return null
+    const digest = await subtle.digest('SHA-256', buf)
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase()
+  } catch {
+    return null
+  }
+}
+
 async function getSession(): Promise<any> {
   if (session) return session
   if (loadFailed) throw new Error('onnx disabled')
-  const ort = await import('onnxruntime-web')
-  ortMod = ort
+  // Hanya kegagalan LOAD yang mematikan ONNX permanen (fetch/ukuran/checksum/
+  // InferenceSession.create). Error session.run() ditangani di detectFacesONNX.
   try {
-    if (ort.env?.wasm) {
-      ort.env.wasm.numThreads = 1
-      // Absolut terhadap dokumen: ort resolve relatif terhadap script bundle
-      // (assets/), sedangkan wasm ada di <root>/ort/.
-      try {
-        ort.env.wasm.wasmPaths = new URL('ort/', document.baseURI).href
-      } catch {
-        ort.env.wasm.wasmPaths = './ort/'
+    // Import dinamis disengaja: ORT (~400KB JS + 13MB wasm) hanya di-load saat
+    // jalur ONNX benar-benar dipakai. Static import akan membebani semua halaman.
+    const ort = await import('onnxruntime-web/wasm')
+    ortMod = ort
+    try {
+      if (ort.env?.wasm) {
+        ort.env.wasm.numThreads = 1
+        // Absolut terhadap dokumen: ort resolve relatif terhadap script bundle
+        // (assets/), sedangkan wasm ada di <root>/ort/.
+        try {
+          ort.env.wasm.wasmPaths = new URL('ort/', document.baseURI).href
+        } catch {
+          ort.env.wasm.wasmPaths = './ort/'
+        }
       }
-    }
-  } catch {}
-  const res = await fetch(MODEL_URL)
-  if (!res.ok) throw new Error(`model http ${res.status}`)
-  const buf = await res.arrayBuffer()
-  if (buf.byteLength < 1000000) throw new Error('model corrupt')
-  session = await ort.InferenceSession.create(buf, { executionProviders: ['wasm'] })
-  return session
+    } catch {}
+    const res = await fetch(MODEL_URL)
+    if (!res.ok) throw new Error(`model http ${res.status}`)
+    const buf = await res.arrayBuffer()
+    if (buf.byteLength < 1000000) throw new Error('model corrupt')
+    const sha = await sha256Hex(buf)
+    if (sha && sha !== FACE_MODEL_SHA256.toUpperCase()) throw new Error('model checksum mismatch')
+    session = await ort.InferenceSession.create(buf, { executionProviders: ['wasm'] })
+    return session
+  } catch (e) {
+    loadFailed = true
+    throw e
+  }
 }
 
 function iou(a: FaceDetection, b: FaceDetection): number {
@@ -154,8 +178,8 @@ export async function detectFacesONNX(image: ImageData): Promise<OnnxFaceSummary
       boxes: dets.slice(0, 10),
     }
   } catch {
-    loadFailed = true
-    detector = null
+    // Error inference/run (atau load yang sudah menandai loadFailed di getSession):
+    // jangan matikan ONNX permanen di sini — panggilan berikutnya boleh coba lagi.
     return null
   }
 }

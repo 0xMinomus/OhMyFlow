@@ -64,7 +64,7 @@ export function hammingDistanceLimited(a: string, b: string, limit: number): num
   return d + Math.abs(a.length - b.length)
 }
 
-// Hash polos (mis. foto putih/gelap total) punya bit sangat timpang → tidak可 dipercaya.
+// Hash polos (mis. foto putih/gelap total) punya bit sangat timpang → tidak bisa dipercaya.
 export function isFlatHash(hash: string): boolean {
   let ones = 0
   for (let i = 0; i < hash.length; i++) if (hash[i] === '1') ones++
