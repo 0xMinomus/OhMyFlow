@@ -16,27 +16,41 @@ export function FolderPicker() {
   const photos = useStore(s=>s.photos)
   const lang = useStore(s=>s.language)
   const [scanning, setScanning] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const t = (id: string, en: string) => (lang==='id' ? id : en)
 
   const pick = async () => {
     const f = await window.ohmyflow.openFolder()
     if (!f) return
     setScanning(true)
+    setError(null)
     try {
+      // scanFolder melempar error saat gagal — folder/photos lama jangan diubah.
+      const list = await window.ohmyflow.scanFolder(f)
       appStore.setFolder(f)
       appStore.setStats(null)
       appStore.setStep('select')
       clearMemThumbs()
-      appStore.setPhotos(await window.ohmyflow.scanFolder(f))
+      appStore.setPhotos(list)
+    } catch (e: any) {
+      setError(e?.message ? String(e.message) : t('Folder tidak bisa dibaca.', 'Folder could not be read.'))
     } finally {
       setScanning(false)
     }
   }
 
+  const errBanner = error && (
+    <div className="mb-3 rounded-sm border border-red-500/40 bg-red-500/10 p-3" role="alert">
+      <span className="font-mono text-[11px] text-red-300">{t('Gagal membaca folder: ', 'Failed to read folder: ')}</span>
+      <span className="break-all font-mono text-[11px] text-red-300/80">{error}</span>
+    </div>
+  )
+
   if (!folder) {
     return (
       <Fieldset num="01" title={t('Folder', 'Folder')}>
         <div className="p-3">
+          {errBanner}
           <button
             onClick={pick}
             disabled={scanning}
@@ -59,6 +73,7 @@ export function FolderPicker() {
   return (
     <Fieldset num="01" title={t('Folder', 'Folder')}>
       <div className="p-3">
+        {errBanner}
         <div className="flex items-center gap-3 rounded-sm border border-flow-600 px-3 py-2.5 min-h-[60px]">
           <span className="shrink-0 text-zinc-400"><FolderIcon size={16} /></span>
           <div className="min-w-0 flex-1">

@@ -1,7 +1,27 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, appStore } from '@/store/useAppStore'
 import { getMemThumb } from '@/lib/thumbCache'
-import { createPadPoller, firstPad } from '@/lib/gamepad'
+import { createPadPoller } from '@/lib/gamepad'
+
+// Cache pratinjau full-res (LRU 8) supaya navigasi bolak-balik tidak decode ulang.
+const PREVIEW_MAX = 8
+const previewCache = new Map<string, string | null>()
+function previewCacheGet(key: string): string | null | undefined {
+  if (!previewCache.has(key)) return undefined
+  const v = previewCache.get(key)!
+  previewCache.delete(key)
+  previewCache.set(key, v)
+  return v
+}
+function previewCacheSet(key: string, url: string | null) {
+  previewCache.delete(key)
+  previewCache.set(key, url)
+  while (previewCache.size > PREVIEW_MAX) {
+    const oldest = previewCache.keys().next().value
+    if (oldest === undefined) break
+    previewCache.delete(oldest)
+  }
+}
 
 function XIcon() {
   return (
@@ -34,7 +54,7 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
   const t = (id: string, en: string) => (lang==='id' ? id : en)
 
   const p = photos.find(x=>x.id === curId)
-  const navIds = ids.filter(id=> photos.some(x=>x.id === id))
+  const navIds = useMemo(() => ids.filter(id=> photos.some(x=>x.id === id)), [ids, photos])
   const idx = navIds.indexOf(curId)
   const hasPrev = idx > 0
   const hasNext = idx >= 0 && idx < navIds.length - 1
@@ -60,7 +80,7 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  })
+  }, [binds, p, hasPrev, hasNext, navIds, idx, onClose])
 
   useEffect(() => {
     let raf = 0
@@ -91,12 +111,17 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
 
   useEffect(() => {
     let dead = false
+    if (!p) { setFull(null); return }
+    if (p.isRaw && !p.previewPath) { setFull(null); return }
+    const key = p.previewPath || p.filePath
+    const cached = previewCacheGet(key)
+    if (cached !== undefined) { setFull(cached); setLoading(false); return }
     setFull(null)
-    if (!p) return
-    if (p.isRaw && !p.previewPath) return
     setLoading(true)
-    window.ohmyflow.readImageAsDataUrl(p.previewPath || p.filePath).then(r => {
-      if (!dead) { setFull(r?.dataUrl ?? null); setLoading(false) }
+    window.ohmyflow.readImageAsDataUrl(key).then(r => {
+      const url = r?.dataUrl ?? null
+      previewCacheSet(key, url)
+      if (!dead) { setFull(url); setLoading(false) }
     }).catch(() => { if (!dead) setLoading(false) })
     return () => { dead = true }
   }, [p?.filePath, p?.previewPath, p?.isRaw]) // eslint-disable-line react-hooks/exhaustive-deps
