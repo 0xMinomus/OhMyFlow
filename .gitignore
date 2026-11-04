@@ -7,7 +7,7 @@ dist-electron/
 release/
 *.tsbuildinfo
 public/ort/
-.code-graph/
+output/
 
 # ── Foto pribadi (besar & privat — JANGAN PERNAH di-commit) ──
 DIGICAM/
@@ -16,6 +16,9 @@ bulbah/
 Foto OSIS skvela/
 sample/
 
+# ── Evaluasi & benchmark (hasil run lokal & dataset ground truth) ──
+.engine-eval/
+eval/
 # ── Log ──────────────────────────────────────────────────────
 *.log
 npm-debug.log*
@@ -38,6 +41,7 @@ Desktop.ini
 .idea/
 .vite/
 .cache/
+.code-graph/
 
 # ── Private working docs (instruksi user & config lokal, bukan publik) ──
 PLAN.md
@@ -47,3 +51,8 @@ MEMORY.md
 PRODUCT.md
 ARCHITECTURE.md
 opencode.json
+currentarchitecture.md
+enginerecoveryreport.md
+new-architecture-v2.md
+unfinished.md
+ENGINE-RECOVERY.md

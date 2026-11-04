@@ -163,7 +163,7 @@ npm run pack
 
 `.heic` / `.heif` is experimental: decoding needs an HEVC decoder from libheif, and the official sharp builds do not necessarily ship one. Files that fail to decode land in Maybe.
 
-RAW files without an embedded JPEG preview are flagged and land in Maybe — they are not analysed. Ratings are still written to XMP like any other photo.
+RAW files without an embedded JPEG preview are flagged and land in Maybe — they are not analyzed. Ratings are still written to XMP like any other photo.
 
 ## XMP Export and Lightroom Integration
 
