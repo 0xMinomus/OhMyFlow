@@ -144,6 +144,7 @@ npm run pack
 | `npm run dev` | Vite dev server on port 5173; the Electron plugin launches the app, hot-reloads the UI, and restarts the main process on change |
 | `npm run typecheck` | Type-check the renderer and preload (`tsconfig.json`) plus the Electron main process (`tsconfig.electron.json`) |
 | `npm run build` | Type-check both projects, build the renderer to `dist/`, build the main process and preload to `dist-electron/`, and copy the ONNX runtime files to `dist/ort/` |
+| `npm run copy:ort` | Copy the ONNX Runtime WebAssembly files from `node_modules` into `dist/ort/` |
 | `npm run build:electron` | Compile the Electron main process and preload to `dist-electron/main.js` and `dist-electron/preload.js` |
 | `npm start` | Launch `dist-electron/main.js` from an existing build — run `npm run build` first |
 | `npm run preview` | Preview the production renderer build |
