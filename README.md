@@ -44,7 +44,7 @@ OhMyFlow is a Windows and Linux desktop app that **culls thousands of photos fro
 
 Your originals are never touched or modified during culling. When you are ready, export your selected buckets (`Picks`, `Maybe`, or `Rejects`) into a clean destination folder (with optional per-bucket subfolders).
 
-All of the AI runs **on your own machine** using ONNX Runtime plus classic computer vision heuristics. No photo ever leaves your computer. No API keys, no cloud, no subscription.
+All of the AI runs **100% on your own machine** using a native multi-threaded Rust engine (`rayon`), SIMD-accelerated image decoding (`image`, `fast_image_resize`), and embedded ONNX face inference (`tract-onnx`). No photo ever leaves your computer. No API keys, no cloud, no subscription, and zero GPU/RTX required.
 
 ## Features
 
@@ -111,11 +111,13 @@ Estimates are computed by the app from your photo count and shown next to each m
 
 ### Portable Release
 
-1. Open the [Releases](https://github.com/0xMinomus/OhMyFlow/releases/latest) page and download the latest portable build (currently `OhMyFlow-v2.0-portable-win32-x64.zip`).
-2. Right-click the zip, choose **Extract All**, and pick a destination folder.
-3. Open the extracted folder and double-click **`OhMyFlow.exe`**.
+1. Open the [Releases](https://github.com/0xMinomus/OhMyFlow/releases/latest) page and download the build for your platform:
+   - **Windows:** `OhMyFlow-windows-x64.exe` (standalone single-file executable, ~22.7 MB)
+   - **Linux AppImage:** `OhMyFlow-2.0.0.AppImage` (portable all-in-one package, ~116 MB)
+   - **Linux Standalone:** `ohmyflow-linux-x64` (native binary for systems with WebKitGTK, ~27.7 MB)
+2. Run the executable directly.
 
-The build is portable: no installer, no admin rights. Because the app is not code-signed yet, Windows SmartScreen may warn you — click **More info**, then **Run anyway**.
+The build is portable: no installer required, no admin rights. On Windows, if SmartScreen prompts, click **More info** → **Run anyway**.
 
 ### Build From Source
 
@@ -130,7 +132,7 @@ npm run tauri:dev
 # production Linux bundle (lands in src-tauri/target/release/bundle/appimage/)
 npm run tauri:build
 
-`npm ci` installs exactly the dependency versions recorded in `package-lock.json`. The build writes the renderer to `dist/`, the Electron main process and preload script to `dist-electron/`, and the ONNX Runtime WebAssembly files to `dist/ort/`.
+`npm ci` installs the frontend build dependencies. Running `npm run tauri:build` compiles the Vite frontend to `dist/` and links the native Rust backend into `src-tauri/target/release/ohmyflow` (Linux) or cross-compiles Windows binaries via `npm run tauri:build:win`.
 
 > Tip: `test-photos/` holds solid-colour test images for smoke-testing the UI — not real photos for judging culling quality.
 
@@ -162,8 +164,8 @@ RAW files without an embedded JPEG preview are flagged and land in Maybe — the
 
 - **Fully offline** — photo processing makes zero network requests. The app never needs the internet after setup.
 - **No API keys, no cloud, no telemetry, no analytics** — there is nothing to collect, and nothing to leak.
-- **All inference runs locally on the CPU** through ONNX Runtime WebAssembly. No GPU acceleration, no remote service, no per-photo upload.
-- **Renderer isolation** — `contextIsolation` is on, `nodeIntegration` is off, and the UI is served over a custom `app://` protocol. All disk access goes through a minimal `window.ohmyflow` bridge handled by the main process.
+- **All inference runs locally on the CPU** through native Rust and `tract-onnx` with compile-time SHA-256 model verification. No WebAssembly overhead, no remote service, no GPU/RTX needed.
+- **Process isolation** — Tauri 2 webview frontend with strict capabilities (`src-tauri/capabilities/default.json`), strict CSP, and a custom `media://` streaming protocol with traversal guard (`is_path_inside_roots`).
 - **Non-destructive culling** — scanning and culling never modify, move, or delete originals. The *Export* action is explicit: it always shows the destination and file count first, then numbers duplicate names automatically.
 
 For the full security model, including the model supply chain and path-traversal protections, see [SECURITY.md](SECURITY.md). To report a vulnerability, follow the policy there instead of opening a public issue with details.
@@ -219,8 +221,8 @@ node scripts/analyze-eval.cjs [--eval sample/eval-high.csv]
 - [ ] Next-level blink detection (lash-line modeling) for wedding candids
 - [x] Full RAW preview decoding (embedded JPEG extraction)
 - [ ] SQLite database for correction history and taste learning
-- [ ] Auto-update via `electron-updater`
-- [ ] Signed NSIS installer (the `electron-builder` target is already configured)
+- [ ] Auto-update via `tauri-plugin-updater`
+- [ ] Signed Windows NSIS installer & Linux packages
 
 ## Contributing
 
@@ -233,9 +235,10 @@ Contributions are welcome. Fork the repo, create a branch (`git checkout -b feat
 ## Acknowledgements
 
 - **UltraFace RFB-320** by Linzaer (MIT licensed) — the bundled face detection model.
-- **ONNX Runtime Web** — local WebAssembly inference.
-- **Electron** (with React, Vite, and Tailwind CSS) — the desktop shell and UI.
-- **sharp** — image decoding and thumbnail generation in the main process.
+- **Tauri 2** (with WebKitGTK on Linux and WebView2 on Windows) — lightweight desktop shell.
+- **tract-onnx** — 100% pure Rust offline ONNX inference.
+- **rayon** — data-parallel multi-core culling engine.
+- **fast_image_resize & image** — SIMD-accelerated image decoding and resampling.
 
 Each dependency is distributed under its own license; see the respective project for details.
 
