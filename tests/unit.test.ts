@@ -6,9 +6,8 @@ import { join, resolve } from 'node:path'
 import sharp from 'sharp'
 
 import { ALLOWED_APP_PATHS, isSafeLocalPath, resolveBundlePath } from '../electron/security'
-import { buildXmp } from '../electron/xmp'
 import { scanFolder } from '../electron/scan'
-import { movePhotos, writeXmpsBulk } from '../electron/fs-ops'
+import { movePhotos } from '../electron/fs-ops'
 import { pruneCacheDir } from '../electron/cache'
 import { extractEmbeddedJpegFromBuffer, extractRawPreview } from '../electron/raw-preview'
 import { loadFolderSession, saveFolderSession } from '../electron/session'
@@ -37,15 +36,6 @@ test('isSafeLocalPath and ALLOWED_APP_PATHS enforce strict bounds', () => {
   assert.equal(ALLOWED_APP_PATHS.exe, undefined)
 })
 
-test('buildXmp emits valid Lightroom XML and escapes special chars', () => {
-  const xml = buildXmp({ rating: 5, label: 'Green' })
-  assert.match(xml, /<xmp:Rating>5<\/xmp:Rating>/)
-  assert.match(xml, /<xmp:Label>Green<\/xmp:Label>/)
-  assert.match(xml, /<rdf:li>OhMyFlow\/Green<\/rdf:li>/)
-
-  const escaped = buildXmp(3, 'Yellow&<>"\'' as never)
-  assert.match(escaped, /&amp;&lt;&gt;&quot;&apos;/)
-})
 
 test('scanFolder pairs uppercase RAW+JPG, skips .xmp, and sorts deterministically', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'omf-scan-'))
@@ -71,30 +61,6 @@ test('scanFolder pairs uppercase RAW+JPG, skips .xmp, and sorts deterministicall
   }
 })
 
-test('writeXmpsBulk deduplicates RAW+JPG pairs and respects overwrite flag', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'omf-xmp-'))
-  try {
-    const raw = join(dir, 'A.CR3')
-    const jpg = join(dir, 'A.JPG')
-    const xmp = join(dir, 'A.xmp')
-    await writeFile(raw, 'r')
-    await writeFile(jpg, 'j')
-
-    const first = await writeXmpsBulk([{ filePath: raw, pairedPath: jpg, rating: 5, label: 'Green' }])
-    assert.deepEqual(first, { ok: 1, skipped: 0, total: 1, errors: [] })
-    assert.match(await readFile(xmp, 'utf-8'), /<xmp:Rating>5<\/xmp:Rating>/)
-
-    const skipped = await writeXmpsBulk([{ filePath: raw, pairedPath: jpg, rating: 1, label: 'Red' }], { overwrite: false })
-    assert.deepEqual(skipped, { ok: 0, skipped: 1, total: 1, errors: [] })
-    assert.match(await readFile(xmp, 'utf-8'), /<xmp:Rating>5<\/xmp:Rating>/)
-
-    const overwritten = await writeXmpsBulk([{ filePath: raw, pairedPath: jpg, rating: 1, label: 'Red' }], { overwrite: true })
-    assert.deepEqual(overwritten, { ok: 1, skipped: 0, total: 1, errors: [] })
-    assert.match(await readFile(xmp, 'utf-8'), /<xmp:Rating>1<\/xmp:Rating>/)
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
 
 test('movePhotos carries RAW+JPG+XMP and auto-numbers collisions', async () => {
   const root = await mkdtemp(join(tmpdir(), 'omf-move-'))

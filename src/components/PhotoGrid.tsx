@@ -252,9 +252,8 @@ export function PhotoGrid() {
               onClick={()=> setMoveOpen(true)}
               className="rounded-sm border border-flow-500 px-3.5 py-1.5 font-mono text-[11px] font-bold text-zinc-200 transition hover:border-zinc-400 hover:text-white"
             >
-              {t('[ Pindah File ]', '[ Move Files ]')}
+              {t('[ Ekspor Foto ]', '[ Export Photos ]')}
             </button>
-            <ExportButton lang={lang} />
           </div>
         </div>
         <div className="border-t border-flow-700" />
@@ -303,65 +302,5 @@ export function PhotoGrid() {
         />
       )}
     </>
-  )
-}
-
-function ExportButton({ lang }: { lang: 'id' | 'en' }) {
-  const photos = useStore(s=>s.photos)
-  const [busy, setBusy] = useState(false)
-  const [overwrite, setOverwrite] = useState(false)
-  const [status, setStatus] = useState<{ ok: boolean, lines: string[] } | null>(null)
-  const t = (id: string, en: string) => (lang==='id' ? id : en)
-
-  const handle = async () => {
-    // Foto tanpa kategori belum dipilah (mis. culling dibatalkan) → jangan diekspor.
-    const items = photos.filter(p=> p.category).map(p=>{
-      const rating = p.category==='picks' ? 5 : p.category==='maybe' ? 3 : 1
-      const label = p.category==='picks' ? 'Green' : p.category==='maybe' ? 'Yellow' : 'Red'
-      return { filePath: p.filePath, pairedPath: p.pairedPath, rating, label }
-    })
-    if (items.length === 0) {
-      setStatus({ ok: false, lines: [t('Belum ada hasil untuk diekspor.', 'Nothing to export yet.')] })
-      return
-    }
-    setBusy(true)
-    setStatus(null)
-    try {
-      const res = await window.ohmyflow.writeXmpsBulk(items, { overwrite })
-      const lines = [t(
-        `${res?.ok ?? 0}/${res?.total ?? items.length} file XMP ditulis.`,
-        `${res?.ok ?? 0}/${res?.total ?? items.length} XMP files written.`,
-      )]
-      if (res?.skipped) lines.push(t(`${res.skipped} dilewati (sidecar sudah ada).`, `${res.skipped} skipped (sidecar already exists).`))
-      const errs: { file: string, error: string }[] = res?.errors ?? []
-      if (errs.length > 0) {
-        lines.push(t(`Gagal ${errs.length} file:`, `Failed ${errs.length} files:`))
-        for (const e of errs.slice(0, 3)) lines.push(`${e.file} — ${e.error}`)
-      }
-      setStatus({ ok: errs.length === 0, lines })
-    } catch (e: any) {
-      setStatus({ ok: false, lines: [t(`Ekspor gagal: ${e?.message ?? e}`, `Export failed: ${e?.message ?? e}`)] })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="flex flex-col items-end gap-1">
-      <div className="flex items-center gap-2">
-        <label className="flex cursor-pointer items-center gap-1 font-mono text-[10px] text-zinc-400">
-          <input type="checkbox" checked={overwrite} onChange={(e)=> setOverwrite(e.target.checked)} className="h-3 w-3 accent-emerald-400" />
-          {t('Timpa XMP lama', 'Overwrite XMP')}
-        </label>
-        <button onClick={handle} disabled={busy} className="rounded-sm border border-zinc-400 px-3.5 py-1.5 font-mono text-[11px] font-bold text-white transition hover:bg-white hover:text-black disabled:opacity-50">
-          {busy ? '…' : lang==='id' ? '[ Ekspor XMP ]' : '[ Export XMP ]'}
-        </button>
-      </div>
-      {status && (
-        <div role="status" className={`max-w-[280px] break-words text-right font-mono text-[10px] ${status.ok ? 'text-zinc-400' : 'text-red-300'}`}>
-          {status.lines.map((l, i)=> <div key={i}>{l}</div>)}
-        </div>
-      )}
-    </div>
   )
 }

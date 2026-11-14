@@ -24,7 +24,6 @@
   - [Build From Source](#build-from-source)
   - [Command Reference](#command-reference)
 - [Supported File Formats](#supported-file-formats)
-- [XMP Export and Lightroom Integration](#xmp-export-and-lightroom-integration)
 - [Privacy and Security](#privacy-and-security)
 - [Project Structure](#project-structure)
 - [Engine Evaluation Harness](#engine-evaluation-harness)
@@ -43,7 +42,7 @@ OhMyFlow is a Windows and Linux desktop app that **culls thousands of photos fro
 | 🟡 **Maybe** | Borderline shots that deserve a quick human glance |
 | 🔴 **Rejects** | Failures: blurry shots, closed eyes, crushed blacks, burst duplicates, blank frames |
 
-Results export as **XMP sidecar files** (Rating 5/3/1 plus Green/Yellow/Red labels), so they show up directly in **Adobe Lightroom, Bridge, and Camera Raw** with no extra steps. Your originals are never moved, modified, or deleted. Only `.xmp` files are written next to them.
+Your originals are never touched or modified during culling. When you are ready, export your selected buckets (`Picks`, `Maybe`, or `Rejects`) into a clean destination folder (with optional per-bucket subfolders).
 
 All of the AI runs **on your own machine** using ONNX Runtime plus classic computer vision heuristics. No photo ever leaves your computer. No API keys, no cloud, no subscription.
 
@@ -69,9 +68,9 @@ All of the AI runs **on your own machine** using ONNX Runtime plus classic compu
 
 ### Files and output
 
-- **RAW+JPG pairing** — pairs like `IMG_1234.CR3` + `IMG_1234.JPG` are treated as one photo with one shared rating and a single sidecar.
-- **Move culled files** — move Picks (optionally including Maybe) into a fresh folder. RAW+JPG pairs and `.xmp` files come along, and name collisions get numbered automatically.
-- **Non-destructive by design** — culling and XMP export never modify, move, or delete your originals.
+- **RAW+JPG pairing** — pairs like `IMG_1234.CR3` + `IMG_1234.JPG` are treated as one photo with a single verdict.
+- **Export culled photos** — move Picks (and optionally Maybe/Rejects) into a fresh folder or separate `Picks/Maybe/Rejects` subfolders. RAW+JPG pairs come along, and name collisions get numbered automatically.
+- **Non-destructive culling** — scanning and culling never modify, move, or delete your originals.
 
 ## How It Works
 
@@ -82,15 +81,14 @@ flowchart TD
   C --> D[Local scoring: focus, exposure, composition, faces and eyes, duplicates, tilt]
   D --> E[Category per photo: Picks / Maybe / Rejects, each with a reason]
   E --> F[Review and correct in the grid or the lightbox]
-  F --> G[Write XMP sidecar files]
-  F --> H[Optionally move culled files into a new folder]
+  F --> G[Export culled files into a destination folder]
 ```
 
 1. **Pick a folder** — from local disk or straight off a memory card.
 2. **Pick a mode** — Fast, Balance, or High (each shows an estimate for your photo count).
 3. **Start culling** — the AI works locally, with live progress you can cancel at any time.
 4. **Review** — filter by Picks, Maybe, or Rejects and correct anything with one click or in the lightbox.
-5. **Export** — write XMP for Lightroom, and optionally move your Picks into a new folder.
+5. **Export** — move your Picks (or chosen buckets) into a new folder, optionally split into subfolders.
 
 ## Culling Modes
 
@@ -165,21 +163,7 @@ npm run pack
 
 `.heic` / `.heif` is experimental: decoding needs an HEVC decoder from libheif, and the official sharp builds do not necessarily ship one. Files that fail to decode land in Maybe.
 
-RAW files without an embedded JPEG preview are flagged and land in Maybe — they are not analyzed. Ratings are still written to XMP like any other photo.
-
-## XMP Export and Lightroom Integration
-
-Every export writes one `.xmp` sidecar next to the original photo — never into a central database:
-
-| Verdict | `xmp:Rating` | `xmp:Label` | Hierarchical keyword |
-|---------|--------------|-------------|----------------------|
-| Picks | 5 | Green | `OhMyFlow/Green` |
-| Maybe | 3 | Yellow | `OhMyFlow/Yellow` |
-| Rejects | 1 | Red | `OhMyFlow/Red` |
-
-- Adobe Bridge and Camera Raw pick the sidecars up as soon as the folder is browsed.
-- In Lightroom Classic, use **Metadata → Read Metadata from File** (or import the folder) to load them.
-- RAW+JPG pairs share one basename and therefore one sidecar, so a pair keeps a single rating.
+RAW files without an embedded JPEG preview are flagged and land in Maybe — they are not analyzed.
 
 ## Privacy and Security
 
@@ -187,7 +171,7 @@ Every export writes one `.xmp` sidecar next to the original photo — never into
 - **No API keys, no cloud, no telemetry, no analytics** — there is nothing to collect, and nothing to leak.
 - **All inference runs locally on the CPU** through ONNX Runtime WebAssembly. No GPU acceleration, no remote service, no per-photo upload.
 - **Renderer isolation** — `contextIsolation` is on, `nodeIntegration` is off, and the UI is served over a custom `app://` protocol. All disk access goes through a minimal `window.ohmyflow` bridge handled by the main process.
-- **Non-destructive** — culling and XMP export never modify, move, or delete originals. The *Move files* action is explicit: it always shows the destination and file count first, then numbers duplicate names automatically.
+- **Non-destructive culling** — scanning and culling never modify, move, or delete originals. The *Export* action is explicit: it always shows the destination and file count first, then numbers duplicate names automatically.
 
 For the full security model, including the model supply chain and path-traversal protections, see [SECURITY.md](SECURITY.md). To report a vulnerability, follow the policy there instead of opening a public issue with details.
 
@@ -196,10 +180,8 @@ For the full security model, including the model supply chain and path-traversal
 ```
 OhMyFlow/
 ├── electron/
-│   ├── main.ts          # Main process: IPC, thumbnail and analysis caches,
-│   │                    #   XMP writing, file moving
+│   ├── main.ts          # Main process: IPC, thumbnail and analysis caches, file export
 │   ├── scan.ts          # Folder scan, supported extensions, RAW+JPG pairing
-│   ├── xmp.ts           # XMP sidecar builder (rating, label, keywords)
 │   └── preload.ts       # Secure renderer-to-main bridge (contextBridge)
 ├── src/
 │   ├── components/      # UI: folder picker, mode selector, grid, lightbox,

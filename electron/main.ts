@@ -1,12 +1,12 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } from 'electron'
-import { join, extname, basename, dirname } from 'path'
+import { join, extname } from 'path'
 import { access, mkdir, readdir, readFile, stat, unlink, writeFile } from 'fs/promises'
 import { createHash } from 'crypto'
 import Module, { createRequire } from 'module'
 import type sharpType from 'sharp'
 import { scanFolder, RAW_EXTS } from './scan'
 import { pruneCacheDir } from './cache'
-import { movePhotos, writeXmpsBulk, type BulkXmpItem, type MovePhotoItem } from './fs-ops'
+import { movePhotos, type MovePhotoItem } from './fs-ops'
 import { extractRawPreview } from './raw-preview'
 import { loadFolderSession, saveFolderSession, type FolderSession } from './session'
 import { ALLOWED_APP_PATHS, APP_CSP, isSafeLocalPath, resolveBundlePath } from './security'
@@ -352,22 +352,6 @@ ipcMain.handle('fs:readImageAsDataUrl', async (_e, filePath: string) => {
   }
 })
 
-ipcMain.handle('fs:writeXmp', async (_e, filePath: string, xmpContent: string) => {
-  if (!isSafeLocalPath(filePath)) return { ok: false, error: 'invalid-path' }
-  try {
-    const dir = dirname(filePath)
-    const base = basename(filePath, extname(filePath))
-    const xmpPath = join(dir, base + '.xmp')
-    await writeFile(xmpPath, xmpContent, 'utf-8')
-    return { ok: true, xmpPath }
-  } catch (e: unknown) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) }
-  }
-})
-
-ipcMain.handle('fs:writeXmpsBulk', async (_e, items: BulkXmpItem[], opts?: { overwrite?: boolean }) => {
-  return writeXmpsBulk(items, opts)
-})
 
 ipcMain.handle('fs:movePhotos', async (_e, payload: { items: MovePhotoItem[]; destDir: string }) => {
   if (!isSafeLocalPath(payload?.destDir)) {

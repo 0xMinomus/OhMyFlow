@@ -93,7 +93,7 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={t('Pindah file hasil pilahan', 'Move culled files')}
+        aria-label={t('Ekspor foto hasil pilahan', 'Export culled photos')}
         className="w-full max-w-sm rounded-md border border-flow-500 bg-flow-800 p-5"
         onClick={(e)=> e.stopPropagation()}
       >
@@ -104,8 +104,8 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
             </span>
             <div className="text-center font-mono text-[13px] font-bold text-white">
               {result.failed.length === 0
-                ? t(`Berhasil! ${result.moved} foto dipindah.`, `Success! Moved ${result.moved} photos.`)
-                : t(`Terpindah ${result.moved}/${result.total} foto.`, `Moved ${result.moved}/${result.total} photos.`)}
+                ? t(`Berhasil! ${result.moved} foto diekspor.`, `Success! Exported ${result.moved} photos.`)
+                : t(`Terekspor ${result.moved}/${result.total} foto.`, `Exported ${result.moved}/${result.total} photos.`)}
             </div>
             {result.breakdown && (
               <div className="font-mono text-[11px] tabular-nums text-zinc-400">{result.breakdown}</div>
@@ -127,7 +127,7 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            <div className="font-mono text-[13px] font-bold text-white">{t('Pindah file hasil pilahan', 'Move culled files')}</div>
+            <div className="font-mono text-[13px] font-bold text-white">{t('Ekspor foto hasil pilahan', 'Export culled photos')}</div>
 
             <button
               onClick={pickDest}
@@ -181,7 +181,7 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
                   ? t(`${selected.length} foto → ${perSub}`, `${selected.length} photos → ${perSub}`)
                   : t(`${selected.length} foto → satu folder`, `${selected.length} photos → one folder`)}
               <div className="mt-0.5 text-[10px] text-zinc-500">
-                {t('RAW+JPG dan .xmp ikut · Nama kembar diberi nomor.', 'RAW+JPG pairs and .xmp follow · Duplicate names get numbered.')}
+                {t('RAW+JPG ikut · Nama kembar diberi nomor.', 'RAW+JPG pairs follow · Duplicate names get numbered.')}
               </div>
             </div>
 
@@ -194,7 +194,7 @@ export function MoveModal({ open, onClose }: { open: boolean; onClose: () => voi
                 disabled={!canMove}
                 className="rounded border border-white bg-white px-5 py-2 font-mono text-[11px] font-bold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:border-flow-600 disabled:bg-transparent disabled:text-zinc-500"
               >
-                {moving ? t('Memindahkan…', 'Moving…') : t(`[ Pindah ${selected.length} ]`, `[ Move ${selected.length} ]`)}
+                {moving ? t('Mengekspor…', 'Exporting…') : t(`[ Ekspor ${selected.length} ]`, `[ Export ${selected.length} ]`)}
               </button>
             </div>
           </div>

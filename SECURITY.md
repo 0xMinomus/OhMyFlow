@@ -33,10 +33,9 @@ OhMyFlow processes everything on your own machine:
 
 ## File Safety
 
-- **Originals are never modified, moved, or deleted** by culling or XMP export.
-  Only `.xmp` sidecar files are written next to your photos.
-- Moving files requires an explicit destination picked by you in a folder
-  dialog, shows the file count first, carries RAW+JPG pairs and XMPs along,
+- **Originals are never modified, moved, or deleted** during scanning or culling.
+- Exporting files requires an explicit destination picked by you in a folder
+  dialog, shows the file count first, carries RAW+JPG pairs along,
   and auto-numbers name collisions.
 - Personal photo folders, build output, logs, and secrets are git-ignored and
   excluded from the packaged app.

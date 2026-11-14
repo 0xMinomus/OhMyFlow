@@ -1,6 +1,5 @@
-import { access, copyFile, mkdir, rename, unlink, writeFile } from 'fs/promises'
+import { access, copyFile, mkdir, rename, unlink } from 'fs/promises'
 import { basename, dirname, extname, join, resolve } from 'path'
-import { buildXmp, type XmpMeta } from './xmp'
 
 async function exists(p: string): Promise<boolean> {
   try {
@@ -16,48 +15,6 @@ export function sameDir(a: string, b: string): boolean {
   const ra = resolve(a)
   const rb = resolve(b)
   return process.platform === 'win32' ? ra.toLowerCase() === rb.toLowerCase() : ra === rb
-}
-
-export interface BulkXmpItem {
-  filePath: string
-  rating: number
-  label: string
-  pairedPath?: string
-}
-
-export async function writeXmpsBulk(
-  items: BulkXmpItem[],
-  opts?: { overwrite?: boolean },
-): Promise<{ ok: number; skipped: number; total: number; errors: { file: string; error: string }[] }> {
-  const list = Array.isArray(items) ? items : []
-  const overwrite = opts?.overwrite === true
-  const handled = new Set<string>() // path xmp yang sudah ditulis/di-skip → jangan tulis dua kali
-  const errors: { file: string; error: string }[] = []
-  let ok = 0
-  let skipped = 0
-
-  for (const it of list) {
-    // RAW+JPG berbagi basename → sidecar yang sama; Set mencegah tulis ganda
-    const srcs = [it.filePath, it.pairedPath].filter((p): p is string => !!p)
-    for (const src of srcs) {
-      const xmpPath = join(dirname(src), basename(src, extname(src)) + '.xmp')
-      if (handled.has(xmpPath)) continue
-      handled.add(xmpPath)
-      try {
-        // default: jangan timpa sidecar yang sudah ada (bisa berisi edit Lightroom)
-        if (!overwrite && await exists(xmpPath)) { skipped++; continue }
-        const tmp = xmpPath + '.tmp'
-        await writeFile(tmp, buildXmp({ rating: it.rating, label: it.label as XmpMeta['label'] }), 'utf-8')
-        await rename(tmp, xmpPath) // atomik dalam direktori yang sama
-        ok++
-      } catch (e) {
-        errors.push({ file: src, error: e instanceof Error ? e.message : String(e) })
-        try { await unlink(xmpPath + '.tmp') } catch {}
-      }
-    }
-  }
-  // total = jumlah sidecar unik yang diproses (ok + skipped + gagal)
-  return { ok, skipped, total: ok + skipped + errors.length, errors }
 }
 
 export interface MovePhotoItem {
