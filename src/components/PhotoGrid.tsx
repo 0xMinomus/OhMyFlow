@@ -78,6 +78,11 @@ function PhotoCard({ p, lang, index, onOpen }: { p: PhotoItem; lang: 'id' | 'en'
       <div className="flex items-center gap-1.5 px-2 h-8 border-b border-flow-700 shrink-0">
         <span className="font-mono text-[10px] tabular-nums text-zinc-500">{num}</span>
         <VerdictBadge cat={p.category || 'maybe'} />
+        {(p.clusterSize ?? 0) > 1 && (
+          <span className={`rounded-sm border px-1 py-px font-mono text-[9px] font-bold tabular-nums ${p.clusterRank === 0 ? 'border-emerald-500/40 text-emerald-300' : 'border-zinc-700 text-zinc-400'}`}>
+            B{(p.clusterRank ?? 0) + 1}/{p.clusterSize}
+          </span>
+        )}
         <span className="ml-auto rounded-sm border border-white/10 bg-black/60 px-1.5 py-px font-mono text-[10px] tabular-nums text-zinc-300">{p.score ?? 0}</span>
       </div>
       <div className="aspect-[16/8.5] bg-flow-900 relative overflow-hidden">
@@ -91,7 +96,7 @@ function PhotoCard({ p, lang, index, onOpen }: { p: PhotoItem; lang: 'id' | 'en'
         >
           <LazyThumb item={p} className="w-full h-full object-cover" />
         </div>
-        {(p.isPaired || (p.isRaw && !p.previewPath && !p.thumbUrl && !p.dataUrl)) && (
+        {(p.isPaired || p.isRaw) && (
           <span className="absolute top-1.5 right-1.5 rounded-sm bg-black/70 px-1.5 py-px text-[9px] font-bold text-zinc-300 border border-white/10 pointer-events-none">
             {p.isPaired ? 'RAW+JPG' : 'RAW'}
           </span>
@@ -129,21 +134,40 @@ function PhotoCard({ p, lang, index, onOpen }: { p: PhotoItem; lang: 'id' | 'en'
   )
 }
 
+type SortMode = 'default' | 'score' | 'focus' | 'burst'
+
 export function PhotoGrid() {
   const photos = useStore(s=>s.photos)
   const cat = useStore(s=>s.selectedCategory)
   const lang = useStore(s=>s.language)
   const stats = useStore(s=>s.stats)
+  const undoCount = useStore(s=>s.undoStack.length)
+  const [sortBy, setSortBy] = useState<SortMode>('default')
   const [page, setPage] = useState(0)
   const [moveOpen, setMoveOpen] = useState(false)
   const [lightIds, setLightIds] = useState<string[] | null>(null)
   const [lightId, setLightId] = useState<string | null>(null)
   const t = (id: string, en: string) => (lang==='id' ? id : en)
 
-  const filtered = useMemo(
-    () => cat==='all' ? photos : photos.filter(p=>p.category===cat),
-    [photos, cat]
-  )
+  const filtered = useMemo(() => {
+    const list = cat==='all' ? [...photos] : photos.filter(p=>p.category===cat)
+    if (sortBy === 'score') {
+      list.sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || a.fileName.localeCompare(b.fileName))
+    } else if (sortBy === 'focus') {
+      list.sort((a, b) => (b.sharpness ?? 0) - (a.sharpness ?? 0) || a.fileName.localeCompare(b.fileName))
+    } else if (sortBy === 'burst') {
+      list.sort((a, b) => {
+        const ab = (a.clusterSize ?? 1) > 1 ? 0 : 1
+        const bb = (b.clusterSize ?? 1) > 1 ? 0 : 1
+        if (ab !== bb) return ab - bb
+        const ag = a.duplicateGroup || a.id
+        const bg = b.duplicateGroup || b.id
+        if (ag !== bg) return ag.localeCompare(bg)
+        return (a.clusterRank ?? 0) - (b.clusterRank ?? 0)
+      })
+    }
+    return list
+  }, [photos, cat, sortBy])
   const counts = useMemo(() => ({
     all: photos.length,
     picks: photos.filter(p=>p.category==='picks').length,
@@ -155,10 +179,19 @@ export function PhotoGrid() {
   const safePage = Math.min(page, totalPages - 1)
   const pageItems = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
 
-  useEffect(() => { setPage(0) }, [cat])
+  useEffect(() => { setPage(0) }, [cat, sortBy])
 
-  // Modal harus tetap hidup walau semua foto sudah dipindah (agar kartu
-  // sukses terlihat): jangan ikut return null di bawah.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (lightId || moveOpen) return
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        appStore.undoCategory()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lightId, moveOpen])
   const moveModal = <MoveModal open={moveOpen} onClose={()=> setMoveOpen(false)} />
   if (photos.length===0 || !stats) return (<>{moveModal}</>)
 
@@ -191,7 +224,30 @@ export function PhotoGrid() {
               )
             })}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="flex items-center gap-1.5 font-mono text-[10px] text-zinc-400">
+              <span>{t('Urut', 'Sort')}:</span>
+              <select
+                value={sortBy}
+                onChange={(e)=> setSortBy(e.target.value as SortMode)}
+                aria-label={t('Urutkan foto', 'Sort photos')}
+                className="rounded-sm border border-flow-500 bg-flow-900 px-2 py-1 font-mono text-[11px] font-bold text-zinc-200 focus:border-zinc-400 focus:outline-none"
+              >
+                <option value="default">{t('Nama', 'Name')}</option>
+                <option value="score">{t('Skor ↓', 'Score ↓')}</option>
+                <option value="focus">{t('Fokus ↓', 'Focus ↓')}</option>
+                <option value="burst">{t('Grup Burst', 'Burst Group')}</option>
+              </select>
+            </label>
+            {undoCount > 0 && (
+              <button
+                onClick={()=> appStore.undoCategory()}
+                title="Ctrl+Z"
+                className="rounded-sm border border-flow-500 px-2.5 py-1.5 font-mono text-[11px] font-bold text-zinc-300 transition hover:border-zinc-400 hover:text-white"
+              >
+                {t('[ Undo ]', '[ Undo ]')}
+              </button>
+            )}
             <button
               onClick={()=> setMoveOpen(true)}
               className="rounded-sm border border-flow-500 px-3.5 py-1.5 font-mono text-[11px] font-bold text-zinc-200 transition hover:border-zinc-400 hover:text-white"

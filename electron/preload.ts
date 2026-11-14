@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('ohmyflow', {
   showInFolder: (filePath: string) => ipcRenderer.invoke('shell:showInFolder', filePath),
   openPath: (filePath: string) => ipcRenderer.invoke('shell:openPath', filePath),
   getPath: (name: string) => ipcRenderer.invoke('app:getPath', name),
+  loadSession: (folderPath: string) => ipcRenderer.invoke('session:load', folderPath),
+  saveSession: (session: unknown) => ipcRenderer.invoke('session:save', session),
   windowControls: {
     minimize: (): Promise<void> => ipcRenderer.invoke('window:minimize'),
     maximize: (): Promise<void> => ipcRenderer.invoke('window:maximize'),
@@ -37,6 +39,8 @@ declare global {
       showInFolder: (p: string) => Promise<void>
       openPath: (p: string) => Promise<void>
       getPath: (n: string) => Promise<string>
+      loadSession: (folderPath: string) => Promise<any>
+      saveSession: (session: any) => Promise<boolean>
       windowControls: {
         minimize: () => Promise<void>
         maximize: () => Promise<void>

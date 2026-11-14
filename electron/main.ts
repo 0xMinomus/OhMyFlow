@@ -7,6 +7,8 @@ import type sharpType from 'sharp'
 import { scanFolder, RAW_EXTS } from './scan'
 import { pruneCacheDir } from './cache'
 import { movePhotos, writeXmpsBulk, type BulkXmpItem, type MovePhotoItem } from './fs-ops'
+import { extractRawPreview } from './raw-preview'
+import { loadFolderSession, saveFolderSession, type FolderSession } from './session'
 import { ALLOWED_APP_PATHS, APP_CSP, isSafeLocalPath, resolveBundlePath } from './security'
 
 let mainWindow: BrowserWindow | null = null
@@ -14,6 +16,8 @@ let mainWindow: BrowserWindow | null = null
 const THUMB_CACHE_MAX_BYTES = 250 * 1024 * 1024
 const ANALYSIS_CACHE_MAX_BYTES = 500 * 1024 * 1024
 const CACHE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000
+const SESSION_CACHE_MAX_BYTES = 50 * 1024 * 1024
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 
 const WEB_MIME: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -68,6 +72,7 @@ async function pruneCaches() {
   await Promise.all([
     pruneCacheDir(join(userData, 'thumbs'), THUMB_CACHE_MAX_BYTES, CACHE_MAX_AGE_MS),
     pruneCacheDir(join(userData, 'analysis'), ANALYSIS_CACHE_MAX_BYTES, CACHE_MAX_AGE_MS),
+    pruneCacheDir(join(userData, 'sessions'), SESSION_CACHE_MAX_BYTES, SESSION_MAX_AGE_MS),
   ])
 }
 
@@ -164,34 +169,44 @@ function getSharp(): typeof sharpType {
   return cachedSharp
 }
 
-async function makeThumbnail(sourcePath: string, cachePath: string): Promise<Buffer | null> {
+async function resolveSharpInput(sourcePath: string): Promise<string | Buffer | null> {
+  const ext = extname(sourcePath).toLowerCase()
+  if (RAW_EXTS.has(ext)) return extractRawPreview(sourcePath)
+  return sourcePath
+}
+
+async function makeThumbnail(sourcePath: string, cachePath: string): Promise<{ buf: Buffer | null; isRawNoPreview?: boolean }> {
   try {
+    const input = await resolveSharpInput(sourcePath)
+    if (!input) return { buf: null, isRawNoPreview: true }
     const sharp = getSharp()
-    const buf = await sharp(sourcePath, { failOn: 'none' })
+    const buf = await sharp(input, { failOn: 'none' })
       .rotate() // auto-orient EXIF
       .resize(480, 480, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 62, mozjpeg: false })
       .toBuffer()
     try { await writeFile(cachePath, buf) } catch {}
-    return buf
+    return { buf }
   } catch {
-    return null
+    return { buf: null }
   }
 }
 
-async function makeAnalysisImage(sourcePath: string, cachePath: string, maxSide: number): Promise<Buffer | null> {
+async function makeAnalysisImage(sourcePath: string, cachePath: string, maxSide: number): Promise<{ buf: Buffer | null; isRawNoPreview?: boolean }> {
   try {
+    const input = await resolveSharpInput(sourcePath)
+    if (!input) return { buf: null, isRawNoPreview: true }
     const sharp = getSharp()
     const size = Math.max(320, Math.min(1600, Math.round(maxSide)))
-    const buf = await sharp(sourcePath, { failOn: 'none' })
+    const buf = await sharp(input, { failOn: 'none' })
       .rotate()
       .resize(size, size, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 85, mozjpeg: false })
       .toBuffer()
     try { await writeFile(cachePath, buf) } catch {}
-    return buf
+    return { buf }
   } catch {
-    return null
+    return { buf: null }
   }
 }
 
@@ -207,8 +222,6 @@ ipcMain.handle('fs:getAnalysisBatch', async (_e, items: { filePath: string; prev
       const src = it.previewPath || it.filePath
       if (!isSafeLocalPath(src)) { out[it.filePath] = { dataUrl: null, error: 'invalid-path' }; continue }
       try {
-        const ext = extname(src).toLowerCase()
-        if (RAW_EXTS.has(ext) && !it.previewPath) { out[it.filePath] = { dataUrl: null, isRaw: true }; continue }
         let st
         try { st = await stat(src) } catch { out[it.filePath] = { dataUrl: null, error: 'not-found' }; continue }
         const key = thumbKey(`${src}|a${size}`, st.size, st.mtimeMs)
@@ -218,8 +231,10 @@ ipcMain.handle('fs:getAnalysisBatch', async (_e, items: { filePath: string; prev
           out[it.filePath] = { dataUrl: `data:image/jpeg;base64,${cached.toString('base64')}` }
           continue
         } catch {}
-        const buf = await makeAnalysisImage(src, cachePath, size)
-        out[it.filePath] = buf ? { dataUrl: `data:image/jpeg;base64,${buf.toString('base64')}` } : { dataUrl: null, error: 'decode-failed' }
+        const res = await makeAnalysisImage(src, cachePath, size)
+        if (res.buf) out[it.filePath] = { dataUrl: `data:image/jpeg;base64,${res.buf.toString('base64')}` }
+        else if (res.isRawNoPreview) out[it.filePath] = { dataUrl: null, isRaw: true }
+        else out[it.filePath] = { dataUrl: null, error: 'decode-failed' }
       } catch (err: unknown) {
         out[it.filePath] = { dataUrl: null, error: err instanceof Error ? err.message : String(err) }
       }
@@ -234,9 +249,6 @@ ipcMain.handle('fs:getThumbnail', async (_e, filePath: string, previewPath?: str
     const src = previewPath || filePath
     if (!isSafeLocalPath(src)) return { dataUrl: null, error: 'invalid-path' }
     const ext = extname(src).toLowerCase()
-    if (RAW_EXTS.has(ext) && !previewPath) {
-      return { dataUrl: null, isRaw: true, ext }
-    }
     let st
     try { st = await stat(src) } catch { return { dataUrl: null, error: 'not-found' } }
     const key = thumbKey(src, st.size, st.mtimeMs)
@@ -246,9 +258,13 @@ ipcMain.handle('fs:getThumbnail', async (_e, filePath: string, previewPath?: str
       const cached = await readFile(cachePath)
       return { dataUrl: `data:image/jpeg;base64,${cached.toString('base64')}`, isRaw: false, cached: true }
     } catch {}
-    const buf = await makeThumbnail(src, cachePath)
-    if (!buf) return { dataUrl: null, error: 'decode-failed' }
-    return { dataUrl: `data:image/jpeg;base64,${buf.toString('base64')}`, isRaw: false, cached: false }
+    const res = await makeThumbnail(src, cachePath)
+    if (!res.buf) {
+      return res.isRawNoPreview
+        ? { dataUrl: null, isRaw: true, ext }
+        : { dataUrl: null, error: 'decode-failed' }
+    }
+    return { dataUrl: `data:image/jpeg;base64,${res.buf.toString('base64')}`, isRaw: false, cached: false }
   } catch (e: unknown) {
     return { dataUrl: null, error: e instanceof Error ? e.message : String(e) }
   }
@@ -265,8 +281,6 @@ ipcMain.handle('fs:getThumbnailsBatch', async (_e, items: { filePath: string; pr
       const src = it.previewPath || it.filePath
       if (!isSafeLocalPath(src)) { out[it.filePath] = { dataUrl: null, error: 'invalid-path' }; continue }
       try {
-        const ext = extname(src).toLowerCase()
-        if (RAW_EXTS.has(ext) && !it.previewPath) { out[it.filePath] = { dataUrl: null, isRaw: true }; continue }
         let st
         try { st = await stat(src) } catch { out[it.filePath] = { dataUrl: null, error: 'not-found' }; continue }
         const key = thumbKey(src, st.size, st.mtimeMs)
@@ -276,8 +290,10 @@ ipcMain.handle('fs:getThumbnailsBatch', async (_e, items: { filePath: string; pr
           out[it.filePath] = { dataUrl: `data:image/jpeg;base64,${cached.toString('base64')}` }
           continue
         } catch {}
-        const buf = await makeThumbnail(src, cachePath)
-        out[it.filePath] = buf ? { dataUrl: `data:image/jpeg;base64,${buf.toString('base64')}` } : { dataUrl: null, error: 'decode-failed' }
+        const res = await makeThumbnail(src, cachePath)
+        if (res.buf) out[it.filePath] = { dataUrl: `data:image/jpeg;base64,${res.buf.toString('base64')}` }
+        else if (res.isRawNoPreview) out[it.filePath] = { dataUrl: null, isRaw: true }
+        else out[it.filePath] = { dataUrl: null, error: 'decode-failed' }
       } catch (err: unknown) {
         out[it.filePath] = { dataUrl: null, error: err instanceof Error ? err.message : String(err) }
       }
@@ -307,7 +323,17 @@ ipcMain.handle('fs:readImageAsDataUrl', async (_e, filePath: string) => {
   if (!isSafeLocalPath(filePath)) return { dataUrl: null, isRaw: false, error: 'invalid-path' }
   const ext = extname(filePath).toLowerCase()
   try {
-    if (RAW_EXTS.has(ext)) return { dataUrl: null, isRaw: true, ext }
+    if (RAW_EXTS.has(ext)) {
+      const rawPreview = await extractRawPreview(filePath)
+      if (!rawPreview) return { dataUrl: null, isRaw: true, ext }
+      try {
+        const sharp = getSharp()
+        const oriented = await sharp(rawPreview, { failOn: 'none' }).rotate().jpeg({ quality: 92 }).toBuffer()
+        return { dataUrl: `data:image/jpeg;base64,${oriented.toString('base64')}`, isRaw: false, ext }
+      } catch {
+        return { dataUrl: `data:image/jpeg;base64,${rawPreview.toString('base64')}`, isRaw: false, ext }
+      }
+    }
 
     const mime = WEB_MIME[ext]
     if (mime) {
@@ -363,6 +389,16 @@ ipcMain.handle('shell:openPath', async (_e, filePath: string) => {
 ipcMain.handle('app:getPath', async (_e, name: string) => {
   if (!ALLOWED_APP_PATHS[name]) throw new Error('disallowed-app-path')
   return app.getPath(name as Parameters<typeof app.getPath>[0])
+})
+
+ipcMain.handle('session:load', async (_e, folderPath: string) => {
+  if (!isSafeLocalPath(folderPath)) return null
+  return loadFolderSession(join(app.getPath('userData'), 'sessions'), folderPath)
+})
+
+ipcMain.handle('session:save', async (_e, session: FolderSession) => {
+  if (!session || !isSafeLocalPath(session.folderPath)) return false
+  return saveFolderSession(join(app.getPath('userData'), 'sessions'), session)
 })
 
 ipcMain.handle('window:minimize', () => mainWindow?.minimize())

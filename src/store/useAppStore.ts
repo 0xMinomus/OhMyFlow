@@ -1,4 +1,4 @@
-import type { PhotoItem, Sensitivity, CullStats, AppSettings } from '@/types'
+import type { PhotoItem, Sensitivity, CullStats, AppSettings, CullCategory } from '@/types'
 import type { Padbinds } from '@/lib/gamepad'
 import { DEFAULT_PADBINDS } from '@/lib/gamepad'
 
@@ -48,6 +48,7 @@ interface AppState {
   keybinds: Keybinds
   padbinds: Padbinds
   padConnected: boolean
+  undoStack: { id: string; prev: CullCategory | undefined }[]
   // actions
   setFolder: (p:string|null)=>void
   setPhotos: (p:PhotoItem[])=>void
@@ -63,6 +64,8 @@ interface AppState {
   resetPadbinds: ()=>void
   setPadConnected: (v:boolean)=>void
   updatePhotoCategory: (id:string, cat: 'picks'|'maybe'|'rejects')=>void
+  undoCategory: ()=>boolean
+  persistSession: ()=>void
   removePhotos: (ids:string[])=>void
   resetSession: ()=>void
 }
@@ -108,6 +111,7 @@ let state: AppState = {
   selectedCategory: 'all',
   keybinds: loadKeybinds(),
   padbinds: loadPadbinds(),
+  undoStack: [],
   padConnected: false,
   setFolder: (p)=>{ state.folderPath=p; emit() },
   setPhotos: (p)=>{ state.photos=p; emit() },
@@ -142,9 +146,73 @@ let state: AppState = {
   },
   resetPadbinds: ()=>{ state.padbinds = { ...DEFAULT_PADBINDS }; try { localStorage.removeItem('ohmyflow-padbinds') } catch {}; emit() },
   setPadConnected: (v)=>{ state.padConnected=v; emit() },
-  updatePhotoCategory: (id, cat)=>{ state.photos = state.photos.map(ph=> ph.id===id? {...ph, category:cat}:ph); if (state.stats) { const rest = state.photos; state.stats = { ...state.stats, picks: rest.filter(p=>p.category==='picks').length, maybe: rest.filter(p=>p.category==='maybe').length, rejects: rest.filter(p=>p.category==='rejects').length } } emit() },
-  removePhotos: (ids)=>{ const gone = new Set(ids); state.photos = state.photos.filter(ph=> !gone.has(ph.id)); if (state.stats) { const rest = state.photos; state.stats = { ...state.stats, total: rest.length, picks: rest.filter(p=>p.category==='picks').length, maybe: rest.filter(p=>p.category==='maybe').length, rejects: rest.filter(p=>p.category==='rejects').length } } emit() },
-  resetSession: ()=>{ state.photos = []; state.stats = null; state.folderPath = null; state.step = 'select'; state.selectedCategory = 'all'; state.cullingProgress = null; emit() },
+  updatePhotoCategory: (id, cat)=>{
+    const cur = state.photos.find(ph=> ph.id===id)
+    if (!cur || cur.category === cat) return
+    state.undoStack = [...state.undoStack.slice(-49), { id, prev: cur.category }]
+    state.photos = state.photos.map(ph=> ph.id===id? {...ph, category:cat}:ph)
+    if (state.stats) { const rest = state.photos; state.stats = { ...state.stats, picks: rest.filter(p=>p.category==='picks').length, maybe: rest.filter(p=>p.category==='maybe').length, rejects: rest.filter(p=>p.category==='rejects').length } }
+    emit()
+    schedulePersist()
+  },
+  undoCategory: ()=>{
+    if (state.undoStack.length === 0) return false
+    const last = state.undoStack[state.undoStack.length - 1]
+    state.undoStack = state.undoStack.slice(0, -1)
+    state.photos = state.photos.map(ph=> ph.id===last.id? {...ph, category:last.prev}:ph)
+    if (state.stats) { const rest = state.photos; state.stats = { ...state.stats, picks: rest.filter(p=>p.category==='picks').length, maybe: rest.filter(p=>p.category==='maybe').length, rejects: rest.filter(p=>p.category==='rejects').length } }
+    emit()
+    schedulePersist()
+    return true
+  },
+  persistSession: ()=>{ persistNow() },
+  removePhotos: (ids)=>{ const gone = new Set(ids); state.photos = state.photos.filter(ph=> !gone.has(ph.id)); state.undoStack = state.undoStack.filter(u=> !gone.has(u.id)); if (state.stats) { const rest = state.photos; state.stats = { ...state.stats, total: rest.length, picks: rest.filter(p=>p.category==='picks').length, maybe: rest.filter(p=>p.category==='maybe').length, rejects: rest.filter(p=>p.category==='rejects').length } } emit(); schedulePersist() },
+  resetSession: ()=>{ state.photos = []; state.stats = null; state.folderPath = null; state.step = 'select'; state.selectedCategory = 'all'; state.cullingProgress = null; state.undoStack = []; emit() },
+}
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null
+function persistNow() {
+  if (typeof window === 'undefined' || !window.ohmyflow?.saveSession) return
+  if (!state.folderPath || !state.stats || state.photos.length === 0) return
+  const payload = {
+    version: 1 as const,
+    folderPath: state.folderPath,
+    sensitivity: state.sensitivity,
+    savedAt: Date.now(),
+    stats: state.stats,
+    items: state.photos.map(p => ({
+      fileName: p.fileName,
+      size: p.size,
+      mtimeMs: p.mtimeMs ?? 0,
+      category: p.category,
+      score: p.score,
+      sharpness: p.sharpness,
+      aesthetic: p.aesthetic,
+      exposure: p.exposure,
+      composition: p.composition,
+      confidence: p.confidence,
+      eyesClosed: p.eyesClosed,
+      reasons: p.reasons,
+      reasonsEn: p.reasonsEn,
+      reasonCodes: p.reasonCodes,
+      isDuplicate: p.isDuplicate,
+      duplicateGroup: p.duplicateGroup,
+      clusterRank: p.clusterRank,
+      clusterSize: p.clusterSize,
+      marginToBest: p.marginToBest,
+      subjFocus: p.subjFocus,
+      hasFace: p.hasFace,
+      objMode: p.objMode,
+      whiteBg: p.whiteBg,
+      eyesState: p.eyesState,
+      eyesP: p.eyesP,
+    })),
+  }
+  void window.ohmyflow.saveSession(payload).catch(() => {})
+}
+function schedulePersist() {
+  if (persistTimer) clearTimeout(persistTimer)
+  persistTimer = setTimeout(persistNow, 300)
 }
 function emit(){ listeners.forEach(l=>l()) }
 

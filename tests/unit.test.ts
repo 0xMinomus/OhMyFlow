@@ -10,6 +10,9 @@ import { buildXmp } from '../electron/xmp'
 import { scanFolder } from '../electron/scan'
 import { movePhotos, writeXmpsBulk } from '../electron/fs-ops'
 import { pruneCacheDir } from '../electron/cache'
+import { extractEmbeddedJpegFromBuffer, extractRawPreview } from '../electron/raw-preview'
+import { loadFolderSession, saveFolderSession } from '../electron/session'
+import { appStore } from '../src/store/useAppStore'
 import { groupDuplicates, hammingDistanceLimited } from '../src/lib/ai-engine/duplicate'
 import { analyzeImageData, downsampleImageData } from '../src/lib/ai-engine/pipeline'
 import { cullPhotos } from '../src/lib/ai-engine/culler'
@@ -222,4 +225,85 @@ test('cullPhotos High mode is deterministic on test-photos and clears transient 
     assert.equal(r.thumbUrl, undefined)
     assert.ok(r.reasons && r.reasons.length > 0)
   }
+})
+
+test('extractEmbeddedJpegFromBuffer and extractRawPreview pick largest preview and handle RAF/missing', async () => {
+  const smallJpg = await sharp({ create: { width: 160, height: 120, channels: 3, background: { r: 20, g: 30, b: 40 } } })
+    .jpeg({ quality: 70 })
+    .toBuffer()
+  const largeJpg = await sharp({ create: { width: 640, height: 480, channels: 3, background: { r: 120, g: 180, b: 220 } } })
+    .jpeg({ quality: 80 })
+    .toBuffer()
+
+  // Simulate TIFF/NEF container with small thumbnail + larger preview
+  const tiffLike = Buffer.concat([
+    Buffer.from('II*\0\x08\0\0\0', 'latin1'),
+    Buffer.alloc(64, 0),
+    smallJpg,
+    Buffer.alloc(128, 0xaa),
+    largeJpg,
+  ])
+  const extracted = extractEmbeddedJpegFromBuffer(tiffLike)
+  assert.ok(extracted)
+  const meta = await sharp(extracted).metadata()
+  assert.equal(meta.width, 640)
+  assert.equal(meta.height, 480)
+
+  // Simulate Fujifilm RAF header
+  const rafHeader = Buffer.alloc(128, 0)
+  rafHeader.write('FUJIFILMCCD-RAW ', 0, 'ascii')
+  rafHeader.writeUInt32BE(128, 0x54)
+  rafHeader.writeUInt32BE(largeJpg.length, 0x58)
+  const rafBuf = Buffer.concat([rafHeader, largeJpg])
+  const dir = await mkdtemp(join(tmpdir(), 'omf-raw-'))
+  try {
+    const rafPath = join(dir, 'TEST.RAF')
+    const emptyPath = join(dir, 'EMPTY.CR3')
+    await writeFile(rafPath, rafBuf)
+    await writeFile(emptyPath, Buffer.alloc(256, 0))
+    const fromFile = await extractRawPreview(rafPath)
+    assert.ok(fromFile && fromFile.length === largeJpg.length)
+    assert.equal(await extractRawPreview(emptyPath), null)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('saveFolderSession and loadFolderSession round-trip persisted culling verdicts', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'omf-sess-'))
+  try {
+    const folder = resolve('/tmp/shoot-01')
+    const ok = await saveFolderSession(dir, {
+      version: 1,
+      folderPath: folder,
+      sensitivity: 'high',
+      savedAt: 123456,
+      stats: { total: 1, picks: 1, maybe: 0, rejects: 0, durationMs: 500, throughputPerMin: 120 },
+      items: [{ fileName: 'A.JPG', size: 100, mtimeMs: 10, category: 'picks', score: 85 }],
+    })
+    assert.equal(ok, true)
+    const loaded = await loadFolderSession(dir, folder)
+    assert.ok(loaded)
+    assert.equal(loaded.sensitivity, 'high')
+    assert.equal(loaded.items[0].category, 'picks')
+    assert.equal(await loadFolderSession(dir, resolve('/tmp/missing')), null)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('appStore updatePhotoCategory and undoCategory restore previous category and stats', () => {
+  appStore.resetSession()
+  appStore.setPhotos([
+    { id: '1', fileName: 'A.JPG', filePath: '/tmp/A.JPG', isPaired: false, isRaw: false, ext: '.jpg', size: 10, baseName: 'A', category: 'maybe' },
+  ])
+  appStore.setStats({ total: 1, picks: 0, maybe: 1, rejects: 0, durationMs: 10, throughputPerMin: 600 })
+  appStore.updatePhotoCategory('1', 'picks')
+  assert.equal(appStore.photos[0].category, 'picks')
+  assert.equal(appStore.stats?.picks, 1)
+  assert.equal(appStore.undoCategory(), true)
+  assert.equal(appStore.photos[0].category, 'maybe')
+  assert.equal(appStore.stats?.picks, 0)
+  assert.equal(appStore.undoCategory(), false)
+  appStore.resetSession()
 })

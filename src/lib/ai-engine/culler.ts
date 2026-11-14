@@ -238,7 +238,7 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
       const blurWillReject = focus < blurFloor && !smoothObject && !eyesClearlyOpen
       if (blurWillReject) {
         reasons.push('Blur / tidak fokus'); reasonsEn.push('Blurry / out of focus')
-      } else if (!smoothObject && blurProven && !sh.isFlat && focus < 65) {
+      } else if (!smoothObject && blurProven && !sh.isFlat && focus < 65 && (opts.mode !== 'high' || focus < preset.picksFocusMin || (subjFocus !== null && subjFocus < 62))) {
         reasons.push('Agak blur'); reasonsEn.push('Slightly soft')
       }
       if (sh.accidental) { reasons.push('Frame kosong (hitam/putih total)'); reasonsEn.push('Blank frame (fully black/white)') }
@@ -434,12 +434,12 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
       // Kembaran yang jelas lebih lunak dari yang tertajam = versi gagal → Rejects.
       // Kembaran yang setara = Maybe (bisa dipilih manual).
       cat = (s < 35 || item.softestInBurst === true || item.redundantInBurst === true) ? 'rejects' : 'maybe'
-    } else if (s >= (smoothObject ? preset.picksAt - 10 : preset.picksAt)) {
-      // Picks harus bersih: tajam (kecuali objek mulus: fokus tak bermakna),
+    } else if (s >= (smoothObject && comp >= 55 ? preset.picksAt - 10 : preset.picksAt)) {
+      // Picks harus bersih: tajam (kecuali objek mulus dengan komposisi layak: fokus tak bermakna),
       // tidak clipped, komposisi layak. Palang objek 10 poin lebih rendah karena
       // langit-langit skornya memang lebih rendah (tekstur tak dinilai).
       // Terkalibrasi di 74 foto produk: yang bersih lewat, bercacat tertahan gate lain.
-      const focusGate = !smoothObject && focus < preset.picksFocusMin
+      const focusGate = !smoothObject && (focus < preset.picksFocusMin || (v2sCap && focus < 65 && item.subjFocus != null && item.subjFocus < 62))
       const clipGate = !whiteBg && (clippedHi > 8 || centerHi > 6)
       // v2 cap (High saja): exposure hancur (bukan whiteBg/objek) = max Maybe.
       // Terukur: 3 foto panggung OSIS (expo 26-28, f94-95); nol di dataset lain.

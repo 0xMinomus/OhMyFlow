@@ -48,12 +48,23 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
   const photos = useStore(s=>s.photos)
   const binds = useStore(s=>s.keybinds)
   const padOn = useStore(s=>s.padConnected)
+  const undoCount = useStore(s=>s.undoStack.length)
   const [curId, setCurId] = useState(initialId)
   const [full, setFull] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [compare, setCompare] = useState(false)
+  const [bestFull, setBestFull] = useState<string | null>(null)
   const t = (id: string, en: string) => (lang==='id' ? id : en)
 
   const p = photos.find(x=>x.id === curId)
+  const burstBest = useMemo(() => {
+    if (!p) return null
+    if (p.duplicateGroup) return photos.find(x => x.id === p.duplicateGroup) ?? null
+    if ((p.clusterSize ?? 0) > 1) {
+      return photos.find(x => x.duplicateGroup === p.id && x.id !== p.id) ?? null
+    }
+    return null
+  }, [p, photos])
   const navIds = useMemo(() => ids.filter(id=> photos.some(x=>x.id === id)), [ids, photos])
   const idx = navIds.indexOf(curId)
   const hasPrev = idx > 0
@@ -68,7 +79,12 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
-      else if (e.key.toUpperCase() === binds.prev.toUpperCase() && hasPrev) setCurId(navIds[idx - 1])
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        appStore.undoCategory()
+      } else if (e.key.toUpperCase() === 'B' && burstBest) {
+        setCompare(c => !c)
+      } else if (e.key.toUpperCase() === binds.prev.toUpperCase() && hasPrev) setCurId(navIds[idx - 1])
       else if (e.key.toUpperCase() === binds.next.toUpperCase() && hasNext) setCurId(navIds[idx + 1])
       else if (!p) return
       else {
@@ -80,8 +96,7 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [binds, p, hasPrev, hasNext, navIds, idx, onClose])
-
+  }, [binds, p, burstBest, hasPrev, hasNext, navIds, idx, onClose])
   useEffect(() => {
     let raf = 0
     let alive = true
@@ -112,20 +127,52 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
   useEffect(() => {
     let dead = false
     if (!p) { setFull(null); return }
-    if (p.isRaw && !p.previewPath) { setFull(null); return }
     const key = p.previewPath || p.filePath
+    const preloadNeighbor = (nId?: string) => {
+      if (!nId) return
+      const np = photos.find(x => x.id === nId)
+      if (!np) return
+      const nk = np.previewPath || np.filePath
+      if (previewCacheGet(nk) !== undefined) return
+      window.ohmyflow.readImageAsDataUrl(nk).then(r => { previewCacheSet(nk, r?.dataUrl ?? null) }).catch(() => {})
+    }
     const cached = previewCacheGet(key)
-    if (cached !== undefined) { setFull(cached); setLoading(false); return }
+    if (cached !== undefined) {
+      setFull(cached)
+      setLoading(false)
+      preloadNeighbor(navIds[idx + 1])
+      preloadNeighbor(navIds[idx - 1])
+      return
+    }
     setFull(null)
     setLoading(true)
     window.ohmyflow.readImageAsDataUrl(key).then(r => {
       const url = r?.dataUrl ?? null
       previewCacheSet(key, url)
-      if (!dead) { setFull(url); setLoading(false) }
+      if (!dead) {
+        setFull(url)
+        setLoading(false)
+        preloadNeighbor(navIds[idx + 1])
+        preloadNeighbor(navIds[idx - 1])
+      }
     }).catch(() => { if (!dead) setLoading(false) })
     return () => { dead = true }
-  }, [p?.filePath, p?.previewPath, p?.isRaw]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [p?.filePath, p?.previewPath, idx]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!burstBest) { setCompare(false); setBestFull(null); return }
+    if (!compare) return
+    let dead = false
+    const bKey = burstBest.previewPath || burstBest.filePath
+    const cached = previewCacheGet(bKey)
+    if (cached !== undefined) { setBestFull(cached); return }
+    window.ohmyflow.readImageAsDataUrl(bKey).then(r => {
+      const url = r?.dataUrl ?? null
+      previewCacheSet(bKey, url)
+      if (!dead) setBestFull(url)
+    }).catch(() => {})
+    return () => { dead = true }
+  }, [compare, burstBest?.filePath, burstBest?.previewPath]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!p) return null
   const reasons = (lang==='id' ? p.reasons : p.reasonsEn) ?? []
   const thumb = p.thumbUrl ?? getMemThumb(p.filePath) ?? undefined
@@ -157,6 +204,14 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
             {reasons.length > 0 && ' · ' + reasons.slice(0, 2).join(' · ')}
           </div>
         </div>
+        {burstBest && (
+          <button
+            onClick={()=> setCompare(c => !c)}
+            className={`rounded border px-2.5 py-1 font-mono text-[11px] font-bold transition ${compare ? 'border-emerald-400 bg-emerald-400 text-black' : 'border-flow-600 text-zinc-300 hover:border-zinc-400 hover:text-white'}`}
+          >
+            {t('[ Bandingkan Burst · B ]', '[ Compare Burst · B ]')}
+          </button>
+        )}
         <button
           onClick={onClose}
           autoFocus
@@ -180,7 +235,40 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
             <Chevron dir="left" />
           </button>
         )}
-        {full ? (
+        {compare && burstBest ? (
+          <div onClick={(e)=> e.stopPropagation()} className="grid h-full w-full max-w-6xl grid-cols-2 gap-3 py-2">
+            <div className="flex min-h-0 flex-col items-center justify-center rounded-sm border border-emerald-500/40 bg-flow-900/50 p-2">
+              <div className="mb-1.5 font-mono text-[10px] text-emerald-300 truncate w-full text-center">
+                {burstBest.clusterRank === 0 ? t('Terbaik di Burst', 'Best in Burst') : t('Pembanding Burst', 'Burst Peer')} · {burstBest.fileName} · {t('Skor', 'Score')} {burstBest.score ?? 0} · {t('Fokus', 'Focus')} {burstBest.sharpness ?? 0}
+              </div>
+              {(bestFull ?? burstBest.thumbUrl ?? getMemThumb(burstBest.filePath)) ? (
+                <img
+                  src={bestFull ?? burstBest.thumbUrl ?? getMemThumb(burstBest.filePath) ?? ''}
+                  alt={burstBest.fileName}
+                  draggable={false}
+                  className="min-h-0 flex-1 max-h-full max-w-full object-contain"
+                />
+              ) : (
+                <span className="font-mono text-[11px] text-zinc-500">{t('Memuat…', 'Loading…')}</span>
+              )}
+            </div>
+            <div className="flex min-h-0 flex-col items-center justify-center rounded-sm border border-flow-600 bg-flow-900/50 p-2">
+              <div className="mb-1.5 font-mono text-[10px] text-zinc-300 truncate w-full text-center">
+                {t('Saat Ini', 'Current')} · {p.fileName} · {t('Skor', 'Score')} {p.score ?? 0} · {t('Fokus', 'Focus')} {p.sharpness ?? 0}
+              </div>
+              {(full || thumb) ? (
+                <img
+                  src={full || thumb}
+                  alt={p.fileName}
+                  draggable={false}
+                  className="min-h-0 flex-1 max-h-full max-w-full object-contain"
+                />
+              ) : (
+                <span className="font-mono text-[11px] text-zinc-500">{t('Pratinjau tidak tersedia', 'Preview unavailable')}</span>
+              )}
+            </div>
+          </div>
+        ) : full ? (
           <img
             src={full}
             alt={p.fileName}
@@ -205,9 +293,6 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
             <span className="font-mono text-[11px] text-zinc-500">{t('Pratinjau penuh tidak tersedia', 'Full preview unavailable')}</span>
           </div>
         )}
-        {loading && (
-          <span className="absolute bottom-4 h-4 w-4 animate-spin rounded-full border-2 border-flow-500 border-t-white" aria-hidden="true" />
-        )}
         {hasNext && (
           <button
             onClick={(e)=> { e.stopPropagation(); setCurId(navIds[idx + 1]) }}
@@ -222,6 +307,11 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
       <div className="flex items-center justify-center gap-2 flex-wrap border-t border-flow-700 px-4 py-2.5" onClick={(e)=> e.stopPropagation()}>
         <span className="absolute left-4 font-mono text-[11px] tabular-nums text-zinc-500">{idx + 1} / {navIds.length}</span>
         <div className="flex gap-1.5">
+          {undoCount > 0 && (
+            <button onClick={()=> appStore.undoCategory()} title="Ctrl+Z" className="rounded-sm border border-flow-500 px-3 py-1.5 font-mono text-[11px] font-bold text-zinc-300 transition hover:border-zinc-400 hover:text-white">
+              Undo
+            </button>
+          )}
           <button disabled={isCur('picks')} aria-disabled={isCur('picks')} onClick={()=> appStore.updatePhotoCategory(p.id, 'picks')} title={isCur('picks') ? t('Sudah Picks', 'Already Picks') : t('Tandai Picks', 'Mark Picks')} className={disCls + btnCls('picks', 'border-emerald-400 bg-emerald-400 text-black')}>[ Picks · {binds.picks} ]</button>
           <button disabled={isCur('maybe')} aria-disabled={isCur('maybe')} onClick={()=> appStore.updatePhotoCategory(p.id, 'maybe')} title={isCur('maybe') ? t('Sudah Maybe', 'Already Maybe') : t('Tandai Maybe', 'Mark Maybe')} className={disCls + btnCls('maybe', 'border-amber-300 bg-amber-300 text-black')}>[ Maybe · {binds.maybe} ]</button>
           <button disabled={isCur('rejects')} aria-disabled={isCur('rejects')} onClick={()=> appStore.updatePhotoCategory(p.id, 'rejects')} title={isCur('rejects') ? t('Sudah Reject', 'Already Reject') : t('Tandai Reject', 'Mark Reject')} className={disCls + btnCls('rejects', 'border-red-400 bg-red-400 text-black')}>[ Reject · {binds.rejects} ]</button>

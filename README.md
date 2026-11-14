@@ -245,7 +245,7 @@ node scripts/analyze-eval.cjs [--eval sample/eval-high.csv]
 ## Roadmap
 
 - [ ] Next-level blink detection (lash-line modeling) for wedding candids
-- [ ] Full RAW preview decoding (embedded JPEG extraction)
+- [x] Full RAW preview decoding (embedded JPEG extraction)
 - [ ] SQLite database for correction history and taste learning
 - [ ] Auto-update via `electron-updater`
 - [ ] Signed NSIS installer (the `electron-builder` target is already configured)

@@ -27,13 +27,43 @@ export function FolderPicker() {
     try {
       // scanFolder melempar error saat gagal — folder/photos lama jangan diubah.
       const list = await window.ohmyflow.scanFolder(f)
+      let restored = false
+      let restoredPhotos = list
+      let restoredStats = null
+      try {
+        const sess = await window.ohmyflow.loadSession?.(f)
+        if (sess?.items?.length) {
+          const byKey = new Map<string, any>()
+          for (const it of sess.items) byKey.set(`${it.fileName}|${it.size}|${Math.round(it.mtimeMs || 0)}`, it)
+          let matched = 0
+          restoredPhotos = list.map((p: any) => {
+            const m = byKey.get(`${p.fileName}|${p.size}|${Math.round(p.mtimeMs || 0)}`)
+            if (!m || !m.category) return p
+            matched++
+            return { ...p, ...m }
+          })
+          if (matched > 0 && matched === list.length && sess.stats) {
+            restored = true
+            if (sess.sensitivity === 'fast' || sess.sensitivity === 'balanced' || sess.sensitivity === 'high') {
+              appStore.setSensitivity(sess.sensitivity)
+            }
+            restoredStats = {
+              ...sess.stats,
+              total: restoredPhotos.length,
+              picks: restoredPhotos.filter((p: any) => p.category === 'picks').length,
+              maybe: restoredPhotos.filter((p: any) => p.category === 'maybe').length,
+              rejects: restoredPhotos.filter((p: any) => p.category === 'rejects').length,
+            }
+          }
+        }
+      } catch {}
       appStore.setFolder(f)
-      appStore.setStats(null)
-      appStore.setStep('select')
+      appStore.setStats(restoredStats)
+      appStore.setStep(restored ? 'review' : 'select')
+      appStore.setCategory('all')
       clearMemThumbs()
-      appStore.setPhotos(list)
+      appStore.setPhotos(restoredPhotos)
     } catch (e: any) {
-      setError(e?.message ? String(e.message) : t('Folder tidak bisa dibaca.', 'Folder could not be read.'))
     } finally {
       setScanning(false)
     }
