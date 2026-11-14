@@ -132,3 +132,7 @@ export function dropMemThumbs(filePaths: string[]) {
     inflight.delete(k)
   }
 }
+
+export function clearMemAnalysis() {
+  memAnalysis.clear()
+}

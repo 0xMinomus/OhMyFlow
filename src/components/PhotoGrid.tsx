@@ -91,7 +91,7 @@ function PhotoCard({ p, lang, index, onOpen }: { p: PhotoItem; lang: 'id' | 'en'
         >
           <LazyThumb item={p} className="w-full h-full object-cover" />
         </div>
-        {(p.isPaired || (p.isRaw && !p.thumbUrl && !p.dataUrl)) && (
+        {(p.isPaired || (p.isRaw && !p.previewPath && !p.thumbUrl && !p.dataUrl)) && (
           <span className="absolute top-1.5 right-1.5 rounded-sm bg-black/70 px-1.5 py-px text-[9px] font-bold text-zinc-300 border border-white/10 pointer-events-none">
             {p.isPaired ? 'RAW+JPG' : 'RAW'}
           </span>
@@ -271,7 +271,7 @@ function ExportButton({ lang }: { lang: 'id' | 'en' }) {
     setBusy(true)
     setStatus(null)
     try {
-      const res = await (window.ohmyflow.writeXmpsBulk as any)(items, { overwrite })
+      const res = await window.ohmyflow.writeXmpsBulk(items, { overwrite })
       const lines = [t(
         `${res?.ok ?? 0}/${res?.total ?? items.length} file XMP ditulis.`,
         `${res?.ok ?? 0}/${res?.total ?? items.length} XMP files written.`,

@@ -1,9 +1,9 @@
 <div align="center">
-  <img src="public/ohmyflow.jpg" alt="OhMyFlow — AI photo culler for Windows" />
-  <p><strong>AI photo culler for Windows. Pick your best shots 10x faster, 100% offline.</strong></p>
+  <img src="public/ohmyflow.jpg" alt="OhMyFlow — AI photo culler for Windows and Linux" />
+  <p><strong>AI photo culler for Windows & Linux. Pick your best shots 10x faster, 100% offline.</strong></p>
   <p>
     <img src="https://img.shields.io/badge/version-1.2.0-blue" alt="version" />
-    <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4" alt="platform" />
+    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D4" alt="platform" />
     <img src="https://img.shields.io/badge/runtime-Electron-47848F" alt="electron" />
     <img src="https://img.shields.io/badge/AI-100%25%20on--device-success" alt="on-device AI" />
     <img src="https://img.shields.io/badge/license-MIT-green" alt="license" />
@@ -35,7 +35,7 @@
 
 ## About
 
-OhMyFlow is a Windows desktop app that **culls thousands of photos from a shoot in minutes**. Point it at a folder and it sorts everything into three buckets:
+OhMyFlow is a Windows and Linux desktop app that **culls thousands of photos from a shoot in minutes**. Point it at a folder and it sorts everything into three buckets:
 
 | Bucket | Meaning |
 |--------|---------|
@@ -106,7 +106,7 @@ Estimates are computed by the app from your photo count and shown next to each m
 
 ### Requirements
 
-- **Windows 10 or 11, 64-bit.**
+- **Windows 10/11 or Linux (x64).**
 - **[Node.js](https://nodejs.org/) 20 or newer** — only needed to build from source.
 - Photo processing runs on your CPU through ONNX Runtime WebAssembly. No GPU, no account, no extra codec pack.
 - Internet access is only required to download a release or to install the build dependencies.
@@ -143,6 +143,7 @@ npm run pack
 |---------|--------------|
 | `npm run dev` | Vite dev server on port 5173; the Electron plugin launches the app, hot-reloads the UI, and restarts the main process on change |
 | `npm run typecheck` | Type-check the renderer and preload (`tsconfig.json`) plus the Electron main process (`tsconfig.electron.json`) |
+| `npm test` | Run automated unit & integration tests (`tests/unit.test.ts`) |
 | `npm run build` | Type-check both projects, build the renderer to `dist/`, build the main process and preload to `dist-electron/`, and copy the ONNX runtime files to `dist/ort/` |
 | `npm run copy:ort` | Copy the ONNX Runtime WebAssembly files from `node_modules` into `dist/ort/` |
 | `npm run build:electron` | Compile the Electron main process and preload to `dist-electron/main.js` and `dist-electron/preload.js` |

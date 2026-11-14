@@ -42,6 +42,9 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'credentialless',
     },
   },
+  worker: {
+    format: 'es',
+  },
   build: {
     outDir: 'dist'
   },

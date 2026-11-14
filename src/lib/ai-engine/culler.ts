@@ -1,19 +1,22 @@
 import type { PhotoItem, Sensitivity, CullCategory } from '@/types'
-import { analyzeOne, clearPipelineCache, decodeOnce, V2_SUBJECT, V2_BURST_RANK, V2_HIEYE, type PipelineFeatures } from './pipeline'
+import { clearPipelineCache, V2_SUBJECT, V2_BURST_RANK, type PipelineFeatures } from './pipeline'
 import { groupDuplicates, hammingDistanceLimited } from './duplicate'
 import { codesFor } from './reasons'
-import { V2_ONNX, V2_PASS2, detectFacesONNX } from '../ml/face-onnx'
-import { refineEyesWithROI } from '../ml/eye-roi'
+import { analyzeSinglePhoto, type AnalyzedPhotoOutput } from './analyze-photo'
+import { createCullWorkerPool } from './workerPool'
 
 export interface CullOptions {
   mode: Sensitivity
   onProgress?: (done: number, total: number, current: PhotoItem) => void
   shouldCancel?: () => boolean
-  // Suntikan penganalisis (default: decode browser). Harness Node menyuntik versi sharp
+  // Streaming prefetch per batch agar ribuan foto tidak menahan ratusan MB base64 di heap.
+  prepareBatch?: (batch: PhotoItem[]) => Promise<void>
+  // Nonaktifkan Web Worker (mis. test/fallback).
+  useWorker?: boolean
+  // Suntikan penganalisis (default: decode browser/worker). Harness Node menyuntik versi sharp
   // agar KALIBRASI memakai kode scoring/kategorisasi yang 100% sama dengan produksi.
   analyze?: (src: string, size: number) => Promise<PipelineFeatures | null>
 }
-
 interface ModePreset {
   analysisSize: number
   batchSize: number
@@ -58,7 +61,7 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
   // Hash disimpan per-item (bukan push saat callback paralel selesai) agar urutan
   // grouping deterministik: run yang sama, folder yang sama = hasil yang sama.
 
-  const batchSize = preset.batchSize
+  const batchSize = opts.prepareBatch ? 12 : preset.batchSize
   let done = 0
   // Diagnostik jaminan-proses (dibaca CullingView → stats): berapa foto yang
   // lolos tanpa AI (thumb null / decode gagal) + apakah loop batal di tengah.
@@ -66,130 +69,101 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
   let featNullCount = 0
   let cancelledEarly = false
 
-  for (let i = 0; i < results.length; i += batchSize) {
-    if (opts.shouldCancel?.()) { cancelledEarly = true; break }
-    const batch = results.slice(i, i + batchSize)
-    await Promise.all(batch.map(async (item) => {
-      // v2: analysis image (High) didahulukan; thumb untuk grid + mode lain.
-      const src = item.analysisUrl || item.thumbUrl || item.dataUrl
-      if (item.isRaw && !src) {
-        item.sharpness = 55
-        item.aesthetic = 55
-        item.exposure = 55
-        item.score = 52
-        item.confidence = 0.4
-        item.reasons = ['RAW — pratinjau tidak tersedia, perlu cek manual']
-        item.reasonsEn = ['RAW — no preview, needs manual check']
-        item.dhash = '0'.repeat(64)
-        return
-      }
-      // Foto tanpa gambar sama sekali (thumbnail gagal & bukan RAW) → aman: Maybe, JANGAN throw.
-      if (!src) {
-        noSrcCount++
-        item.sharpness = 40
-        item.aesthetic = 45
-        item.exposure = 45
-        item.score = 46
-        item.confidence = 0.3
-        item.reasons = ['Pratinjau gagal dimuat — masuk Maybe agar tidak hilang']
-        item.reasonsEn = ['Preview failed to load — kept in Maybe to be safe']
-        item.dhash = '0'.repeat(64)
-        return
-      }
-      let feat: PipelineFeatures | null = null
-      try {
-        feat = opts.analyze
-          ? await opts.analyze(src, preset.analysisSize)
-          : await analyzeOne(src, preset.analysisSize)
-      } catch {
-        feat = null
-      }
-      if (!feat) {
-        featNullCount++
-        item.sharpness = 40
-        item.aesthetic = 45
-        item.score = 42
-        item.confidence = 0.3
-        item.reasons = ['Gagal dianalisis — masuk Maybe agar tidak hilang']
-        item.reasonsEn = ['Analysis failed — kept in Maybe to be safe']
-        item.dhash = '0'.repeat(64)
-        return
-      }
+  const usePool = !opts.analyze && opts.useWorker !== false
+  const pool = usePool
+    ? createCullWorkerPool((src, mode, size) => analyzeSinglePhoto(src, mode, size))
+    : null
 
-      const { sharpness: sh, aesthetic: ae, composition: co, face, tilt, subject, motion, dhash } = feat
-      item.dhash = dhash
-      // v2 subject (High saja; mode lain tak tersentuh).
-      const v2s = V2_SUBJECT && opts.mode === 'high'
-      const subjFocus = v2s ? subject.focus : null
-      item.subjFocus = subjFocus
-      item.motion = v2s ? motion.motionLikelihood : 0
-      // v2 ONNX (High + wajah + mata unknown saja): lokalisasi nyata untuk cap
-      // wajah-dominan. Gagal/load-gagal = diam (fallback heuristik). Ghost-skin
-      // produk tak dapat box → tak kena cap (kasus DSCF3951).
-      if (V2_ONNX && opts.mode === 'high' && face.hasFace && face.eyesState === 'unknown') {
-        try {
-          const img = await decodeOnce(src, 320)
-          const sum = img ? await detectFacesONNX(img) : null
-          item.onnxFace = sum
-          if (sum && sum.available && sum.maxArea > 0.12) {
-            item.onnxDominantUnknown = true
-          }
-        } catch {
-          item.onnxFace = null
+  try {
+    for (let i = 0; i < results.length; i += batchSize) {
+      if (opts.shouldCancel?.()) { cancelledEarly = true; break }
+      const batch = results.slice(i, i + batchSize)
+      if (opts.prepareBatch) {
+        try { await opts.prepareBatch(batch) } catch {}
+        if (opts.shouldCancel?.()) {
+          for (const b of batch) { delete b.analysisUrl; delete b.thumbUrl }
+          cancelledEarly = true
+          break
         }
       }
-      // Pass-2 eye ROI (Fase 6, High + unknown + box kecil): crop wajah ONNX
-      // lalu heuristik mata yang sama. Upgrade hanya bila yakin
-      // (open p≤0.2 / closed p>0.6); Node = skip → harness bit-identik.
-      if (V2_PASS2 && opts.mode === 'high' && face.hasFace && face.eyesState === 'unknown') {
+      await Promise.all(batch.map(async (item) => {
         try {
-          const sum = item.onnxFace
-          const cands = (sum?.boxes ?? []).filter((b) => b.score >= 0.7 && (b.box.w * b.box.h) < 0.12)
-            .sort((a, b) => b.score - a.score)
-          if (cands.length) {
-            const img640 = await decodeOnce(src, 640)
-            const roi = img640 ? await refineEyesWithROI(img640, cands[0].box) : null
-            item.pass2 = roi
-            if (roi && roi.eyesState === 'open' && roi.eyesClosedProbability <= 0.2) {
+          // v2: analysis image (High) didahulukan; thumb untuk grid + mode lain.
+          const src = item.analysisUrl || item.thumbUrl || item.dataUrl
+          if (item.isRaw && !src) {
+            item.sharpness = 55
+            item.aesthetic = 55
+            item.exposure = 55
+            item.score = 52
+            item.confidence = 0.4
+            item.reasons = ['RAW — pratinjau tidak tersedia, perlu cek manual']
+            item.reasonsEn = ['RAW — no preview, needs manual check']
+            item.dhash = '0'.repeat(64)
+            return
+          }
+          // Foto tanpa gambar sama sekali (thumbnail gagal & bukan RAW) → aman: Maybe, JANGAN throw.
+          if (!src) {
+            noSrcCount++
+            item.sharpness = 40
+            item.aesthetic = 45
+            item.exposure = 45
+            item.score = 46
+            item.confidence = 0.3
+            item.reasons = ['Pratinjau gagal dimuat — masuk Maybe agar tidak hilang']
+            item.reasonsEn = ['Preview failed to load — kept in Maybe to be safe']
+            item.dhash = '0'.repeat(64)
+            return
+          }
+          let analyzed: AnalyzedPhotoOutput | null = null
+          try {
+            analyzed = pool
+              ? await pool.analyze(src, opts.mode, preset.analysisSize)
+              : await analyzeSinglePhoto(src, opts.mode, preset.analysisSize, opts.analyze)
+          } catch {
+            analyzed = null
+          }
+          if (!analyzed) {
+            featNullCount++
+            item.sharpness = 40
+            item.aesthetic = 45
+            item.score = 42
+            item.confidence = 0.3
+            item.reasons = ['Gagal dianalisis — masuk Maybe agar tidak hilang']
+            item.reasonsEn = ['Analysis failed — kept in Maybe to be safe']
+            item.dhash = '0'.repeat(64)
+            return
+          }
+
+          const { feat, onnxFace, onnxDominantUnknown, pass2, hiFace } = analyzed
+          const { sharpness: sh, aesthetic: ae, composition: co, face, tilt, subject, motion, dhash } = feat
+          item.dhash = dhash
+          // v2 subject (High saja; mode lain tak tersentuh).
+          const v2s = V2_SUBJECT && opts.mode === 'high'
+          const subjFocus = v2s ? subject.focus : null
+          item.subjFocus = subjFocus
+          item.motion = v2s ? motion.motionLikelihood : 0
+          item.onnxFace = onnxFace
+          if (onnxDominantUnknown) item.onnxDominantUnknown = true
+          if (pass2 !== null) item.pass2 = pass2
+
+          if (pass2 && pass2.eyesState === 'open' && pass2.eyesClosedProbability <= 0.2) {
+            face.eyesState = 'open'
+            face.eyesClosedProbability = pass2.eyesClosedProbability
+          } else if (pass2 && pass2.eyesState === 'closed' && pass2.eyesClosedProbability > 0.6) {
+            face.eyesState = 'closed'
+            face.eyesClosedProbability = pass2.eyesClosedProbability
+          }
+          if (hiFace) {
+            face.pupilHits = hiFace.pupilHits ?? face.pupilHits
+            if (hiFace.eyesState === 'open' && hiFace.eyesClosedProbability <= 0.2) {
               face.eyesState = 'open'
-              face.eyesClosedProbability = roi.eyesClosedProbability
-            } else if (roi && roi.eyesState === 'closed' && roi.eyesClosedProbability > 0.6) {
+              face.eyesClosedProbability = hiFace.eyesClosedProbability
+            } else if (hiFace.eyesState === 'closed' && hiFace.eyesClosedProbability > 0.6) {
               face.eyesState = 'closed'
-              face.eyesClosedProbability = roi.eyesClosedProbability
+              face.eyesClosedProbability = hiFace.eyesClosedProbability
             }
           }
-        } catch {
-          item.pass2 = null
-        }
-      }
-      // GT-2026-09: eye second-pass resolusi tinggi (High + wajah + unknown).
-      // Pupil kecil tak teresolusi di 512 (merem = unknown) vs teresolusi di 768
-      // (terbuka, hits≥5). Upgrade-only + catat pupilHits; gagal = diam.
-      // Harness: lewat opts.analyze (sharp) — terukur identik dengan produksi.
-      if (V2_HIEYE && opts.mode === 'high' && face.hasFace && face.eyesState === 'unknown') {
-        try {
-          const hi = opts.analyze
-            ? await opts.analyze(src, 768)
-            : await analyzeOne(src, 768)
-          const hf = hi?.face
-          if (hf && hf.hasFace) {
-            face.pupilHits = hf.pupilHits ?? face.pupilHits
-            if (hf.eyesState === 'open' && hf.eyesClosedProbability <= 0.2) {
-              face.eyesState = 'open'
-              face.eyesClosedProbability = hf.eyesClosedProbability
-            } else if (hf.eyesState === 'closed' && hf.eyesClosedProbability > 0.6) {
-              face.eyesState = 'closed'
-              face.eyesClosedProbability = hf.eyesClosedProbability
-            }
-          }
-        } catch {
-          item.eyeHi = null
-        }
-      }
-      item.pupilHits = face.pupilHits ?? 0
-
-      // Keputusan mata tertutup memakai ambang probabilitas per mode (high paling tegas).
-      // WAJIB state 'closed': 'unknown' (pupil tak terbaca) tidak boleh vonis mata —
+          item.pupilHits = face.pupilHits ?? 0
       // terbukti salah menuduh 8 foto (tangan di depan wajah, mata sipit senyum).
       const eyesClosed = face.hasFace
         && face.eyesState === 'closed'
@@ -329,26 +303,27 @@ export async function cullPhotos(items: PhotoItem[], opts: CullOptions): Promise
       if (sh.isFlat || ae.isFlat) score = Math.min(score, 62)
       // Horizon miring = cacat ringan: penalti kecil, tak pernah vonis.
       if (tilt.tilted) score -= 6
-
-      item.score = Math.max(0, Math.min(99, score))
-      // v2 cap (High saja): unknown di wajah dominan + subjek kritis lunak.
-      // Ambang provisional, kalibrasi via bench (lihat fase-update Fase 2).
-      let v2cap: '' | 'maybe' | 'reject' = ''
-      if (v2s && item.onnxDominantUnknown) v2cap = 'maybe'
-      // Cap unknown-skin DITAHAN (2026-09-16): tanpa label manusia, unknown saja
-      // bukan eviden cukup untuk demosi — ghost-skin produk (DSCF3951) ikut kena.
-      // Yang aktif: netral 72 (tanpa reward) + critical subject gate di bawah.
-      if (v2s && face.hasFace && subjFocus !== null && subjFocus < 55 && !smoothObject) v2cap = 'maybe'
-      if (v2s && face.hasFace && subjFocus !== null && subjFocus < 35 && face.faceConfidence > 0.6 && !smoothObject) v2cap = 'reject'
-      // GT-2026-09: plafon Maybe untuk unknown-tanpa-pupil DITAHAN (bleed 35
-      // H-Pick vs gain 13; Maybe 41% > target 10–25%). Lihat MEMORY §6b.
-      item.v2cap = v2cap
-      // confidence keseluruhan untuk UI (mis. tampilkan "perlu cek manual" jika rendah)
-      item.confidence = Math.round(((sh.confidence + ae.confidence + (face.hasFace ? face.faceConfidence : 0.7)) / 3) * 100) / 100
-    }))
-    done += batch.length
-    if (opts.onProgress) batch.forEach((b) => opts.onProgress!(done, results.length, b))
-    await new Promise((r) => setTimeout(r, 0)) // yield agar UI tidak freeze
+          item.score = Math.max(0, Math.min(99, score))
+          // v2 cap (High saja): unknown di wajah dominan + subjek kritis lunak.
+          let v2cap: '' | 'maybe' | 'reject' = ''
+          if (v2s && item.onnxDominantUnknown) v2cap = 'maybe'
+          if (v2s && face.hasFace && subjFocus !== null && subjFocus < 55 && !smoothObject) v2cap = 'maybe'
+          if (v2s && face.hasFace && subjFocus !== null && subjFocus < 35 && face.faceConfidence > 0.6 && !smoothObject) v2cap = 'reject'
+          item.v2cap = v2cap
+          // confidence keseluruhan untuk UI (mis. tampilkan "perlu cek manual" jika rendah)
+          item.confidence = Math.round(((sh.confidence + ae.confidence + (face.hasFace ? face.faceConfidence : 0.7)) / 3) * 100) / 100
+        } finally {
+          // Bebaskan payload base64 dari store setelah fitur diekstrak; thumbCache LRU melayani UI grid.
+          delete item.analysisUrl
+          if (opts.prepareBatch) delete item.thumbUrl
+        }
+      }))
+      done += batch.length
+      if (opts.onProgress) batch.forEach((b) => opts.onProgress!(done, results.length, b))
+      await new Promise((r) => setTimeout(r, 0)) // yield agar UI tidak freeze
+    }
+  } finally {
+    pool?.dispose()
   }
 
   // Duplikat/burst yang bagus BUKAN sampah — selalu Maybe (bisa direview), tak pernah

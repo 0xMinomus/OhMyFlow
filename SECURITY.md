@@ -21,17 +21,15 @@ OhMyFlow processes everything on your own machine:
 
 ## Renderer Isolation
 
-- `contextIsolation: true`, `nodeIntegration: false`. The UI cannot touch the
-  disk or Node APIs directly.
+- `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`. The UI cannot
+  touch the disk or Node APIs directly.
 - All disk access goes through a minimal `contextBridge` surface (`window.ohmyflow`)
-  handled by the main process.
+  handled by the main process, with local path and `app:getPath` allowlist validation.
 - The renderer is served over a custom `app://` protocol (not `file://`) with
-  `Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy` headers, and the
-  handler only serves files inside the app bundle (path traversal blocked,
-  GET only).
-- Known gaps, stated plainly: the `BrowserWindow` runs with `sandbox: false`
-  because the preload script needs Node APIs, and there is no explicit Content
-  Security Policy yet.
+  `Cross-Origin-Opener-Policy`, `Cross-Origin-Embedder-Policy`, and a strict
+  `Content-Security-Policy` (`default-src 'self' app:; script-src 'self' 'wasm-unsafe-eval'`).
+  The handler only serves files inside `dist/` (traversal blocked via `path.relative`, GET only).
+- Packaged disk caches (`thumbs/`, `analysis/`) are bounded by LRU size and age pruning.
 
 ## File Safety
 

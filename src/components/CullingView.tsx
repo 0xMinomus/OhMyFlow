@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { useStore, appStore } from '@/store/useAppStore'
 import { cullPhotos } from '@/lib/ai-engine/culler'
 import { ANALYSIS_IMAGE_SIZE, V2_ANALYSIS_IMAGE } from '@/lib/ai-engine/pipeline'
-import { prefetchThumbsBatch, getMemThumb, prefetchAnalysisBatch } from '@/lib/thumbCache'
+import { prefetchThumbsBatch, getMemThumb, prefetchAnalysisBatch, clearMemAnalysis } from '@/lib/thumbCache'
 
 function InfoIcon() {
   return (
@@ -32,61 +32,37 @@ export function CullingView() {
     const t0 = performance.now()
 
     try {
-      const withThumbs = photos.map((p) => ({ ...p }))
-      // v2 analysis image HANYA High (verdict mode lain bit-identik).
       const useAnalysis = V2_ANALYSIS_IMAGE && mode === 'high'
-      // Bobot bar: thumb 30% + analysis 30% (High) / thumb 60% (lainnya) + AI sisa.
-      const thumbW = useAnalysis ? 0.3 : 0.6
-      for (let i = 0; i < withThumbs.length; i += 24) {
-        if (cancelRef.current) break
-        const chunk = withThumbs.slice(i, i + 24)
-        let map: Map<string, string | null>
-        try {
-          map = await prefetchThumbsBatch(chunk)
-        } catch {
-          map = new Map()
-        }
-        for (const it of chunk) {
-          const u = map.get(it.filePath) ?? getMemThumb(it.filePath) ?? null
-          it.thumbUrl = u
-        }
-        const loaded = Math.min(withThumbs.length, i + 24)
-        // Prefetch (sharp+IPC full-res) = kerja berat → bobot jujur (lihat thumbW).
-        appStore.setProgress({ done: Math.round(loaded * thumbW), total: photos.length, label: t('Siapkan thumbnail', 'Prepare thumbnails') })
-        await new Promise(r => setTimeout(r, 0))
-      }
-      if (useAnalysis) {
-        const aSize = ANALYSIS_IMAGE_SIZE[mode] ?? 1280
-        for (let i = 0; i < withThumbs.length; i += 24) {
-          if (cancelRef.current) break
-          const chunk = withThumbs.slice(i, i + 24)
-          let amap: Map<string, string | null>
-          try {
-            amap = await prefetchAnalysisBatch(chunk, aSize)
-          } catch {
-            amap = new Map()
-          }
-          for (const it of chunk) it.analysisUrl = amap.get(it.filePath) ?? null
-          const loaded = Math.min(withThumbs.length, i + 24)
-          appStore.setProgress({ done: Math.round(withThumbs.length * 0.3 + loaded * 0.3), total: photos.length, label: t('Siapkan analisis', 'Prepare analysis') })
-          await new Promise(r => setTimeout(r, 0))
-        }
-      }
-      if (cancelRef.current) {
-        appStore.setProgress(null)
-        appStore.setStep('select')
-        return
-      }
-
-      const baseW = useAnalysis ? 0.6 : 0.6
-      const culled = await cullPhotos(withThumbs, {
+      const aSize = ANALYSIS_IMAGE_SIZE[mode] ?? 1280
+      const input = photos.map((p) => ({ ...p }))
+      const culled = await cullPhotos(input, {
         mode,
         shouldCancel: () => cancelRef.current,
-        onProgress: (done,total)=> {
-          const mapped = Math.round(total * baseW + done * (1 - baseW))
-          appStore.setProgress({ done: Math.min(total, mapped), total, label: t('Analisis', 'Analyzing') })
-        }
+        prepareBatch: async (batch) => {
+          let tmap: Map<string, string | null>
+          try {
+            tmap = await prefetchThumbsBatch(batch)
+          } catch {
+            tmap = new Map()
+          }
+          for (const it of batch) {
+            it.thumbUrl = tmap.get(it.filePath) ?? getMemThumb(it.filePath) ?? null
+          }
+          if (useAnalysis) {
+            let amap: Map<string, string | null>
+            try {
+              amap = await prefetchAnalysisBatch(batch, aSize)
+            } catch {
+              amap = new Map()
+            }
+            for (const it of batch) it.analysisUrl = amap.get(it.filePath) ?? null
+          }
+        },
+        onProgress: (done, total) => {
+          appStore.setProgress({ done, total, label: t('Memilah', 'Culling') })
+        },
       })
+      clearMemAnalysis()
       // Batal di tengah = hasil parsial (ekor tanpa kategori) → JANGAN ke review.
       if (cancelRef.current) {
         appStore.setProgress(null)

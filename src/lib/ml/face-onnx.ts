@@ -40,6 +40,11 @@ let ortMod: any = null
 let session: any = null
 let loadFailed = false
 let chain: Promise<any> = Promise.resolve() // serialisasi session.run
+let onnxBaseUrl = ''
+
+export function setOnnxBaseUrl(url: string) {
+  if (url) onnxBaseUrl = url
+}
 
 // SHA-256 hex uppercase; null bila crypto.subtle tak tersedia (konteks non-secure)
 // — verifikasi dilewati, jangan crash. Renderer memakai app:// (secure) → tersedia.
@@ -64,19 +69,21 @@ async function getSession(): Promise<any> {
     // jalur ONNX benar-benar dipakai. Static import akan membebani semua halaman.
     const ort = await import('onnxruntime-web/wasm')
     ortMod = ort
+    const base = onnxBaseUrl
+      || (typeof document !== 'undefined' ? document.baseURI : '')
+      || (typeof self !== 'undefined' && self.location ? self.location.href : '')
     try {
       if (ort.env?.wasm) {
         ort.env.wasm.numThreads = 1
-        // Absolut terhadap dokumen: ort resolve relatif terhadap script bundle
-        // (assets/), sedangkan wasm ada di <root>/ort/.
         try {
-          ort.env.wasm.wasmPaths = new URL('ort/', document.baseURI).href
+          ort.env.wasm.wasmPaths = base ? new URL('ort/', base).href : './ort/'
         } catch {
           ort.env.wasm.wasmPaths = './ort/'
         }
       }
     } catch {}
-    const res = await fetch(MODEL_URL)
+    const modelUrl = base ? new URL(MODEL_URL, base).href : MODEL_URL
+    const res = await fetch(modelUrl)
     if (!res.ok) throw new Error(`model http ${res.status}`)
     const buf = await res.arrayBuffer()
     if (buf.byteLength < 1000000) throw new Error('model corrupt')

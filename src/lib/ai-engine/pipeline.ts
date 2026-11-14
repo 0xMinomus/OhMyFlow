@@ -46,10 +46,73 @@ function dataUrlKey(dataUrl: string): string {
   for (let i = 0; i < n; i++) h = ((h << 5) + h + dataUrl.charCodeAt(i)) | 0
   return `${dataUrl.length}:${h}:${dataUrl.slice(-64)}`
 }
+function dataUrlToBlob(dataUrl: string): Blob | null {
+  const comma = dataUrl.indexOf(',')
+  if (comma === -1 || !dataUrl.slice(0, comma).includes('base64')) return null
+  const mime = dataUrl.slice(5, comma).split(';')[0] || 'image/jpeg'
+  const bin = atob(dataUrl.slice(comma + 1))
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return new Blob([bytes], { type: mime })
+}
+
+async function decodeViaBitmap(dataUrl: string, maxSide: number): Promise<ImageData | null> {
+  const blob = dataUrlToBlob(dataUrl)
+  if (!blob) return null
+  const bmp = await createImageBitmap(blob)
+  try {
+    let w = bmp.width, h = bmp.height
+    if (!w || !h) return null
+    if (w > maxSide || h > maxSide) {
+      const s = Math.min(maxSide / w, maxSide / h)
+      w = Math.max(2, Math.round(w * s)); h = Math.max(2, Math.round(h * s))
+    }
+    const canvas = new OffscreenCanvas(w, h)
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    if (!ctx) return null
+    ctx.drawImage(bmp, 0, 0, w, h)
+    return ctx.getImageData(0, 0, w, h)
+  } finally {
+    bmp.close()
+  }
+}
+
+/** Downsample ImageData in memory (bilinear) to avoid redundant image decodes. */
+export function downsampleImageData(src: ImageData, maxSide: number): ImageData {
+  const sw = src.width, sh = src.height
+  if (sw <= maxSide && sh <= maxSide) return src
+  const s = Math.min(maxSide / sw, maxSide / sh)
+  const dw = Math.max(2, Math.round(sw * s))
+  const dh = Math.max(2, Math.round(sh * s))
+  const out = new Uint8ClampedArray(dw * dh * 4)
+  const sd = src.data
+  const xRatio = (sw - 1) / Math.max(1, dw - 1)
+  const yRatio = (sh - 1) / Math.max(1, dh - 1)
+  for (let y = 0; y < dh; y++) {
+    const gy = y * yRatio
+    const y0 = Math.floor(gy), y1 = Math.min(sh - 1, y0 + 1)
+    const fy = gy - y0, iy = 1 - fy
+    for (let x = 0; x < dw; x++) {
+      const gx = x * xRatio
+      const x0 = Math.floor(gx), x1 = Math.min(sw - 1, x0 + 1)
+      const fx = gx - x0, ix = 1 - fx
+      const w00 = ix * iy, w10 = fx * iy, w01 = ix * fy, w11 = fx * fy
+      const i00 = (y0 * sw + x0) * 4, i10 = (y0 * sw + x1) * 4
+      const i01 = (y1 * sw + x0) * 4, i11 = (y1 * sw + x1) * 4
+      const o = (y * dw + x) * 4
+      out[o] = Math.round(sd[i00] * w00 + sd[i10] * w10 + sd[i01] * w01 + sd[i11] * w11)
+      out[o + 1] = Math.round(sd[i00 + 1] * w00 + sd[i10 + 1] * w10 + sd[i01 + 1] * w01 + sd[i11 + 1] * w11)
+      out[o + 2] = Math.round(sd[i00 + 2] * w00 + sd[i10 + 2] * w10 + sd[i01 + 2] * w01 + sd[i11 + 2] * w11)
+      out[o + 3] = 255
+    }
+  }
+  return typeof ImageData !== 'undefined'
+    ? new ImageData(out, dw, dh)
+    : ({ data: out, width: dw, height: dh } as ImageData)
+}
 
 export function decodeOnce(dataUrl: string, maxSide = 384): Promise<ImageData | null> {
   // Guard: input tidak valid (mis. thumbnail gagal dibuat) → null, JANGAN throw.
-  // Sebelumnya dataUrl undefined bikin TypeError di sini yang merembet mematikan seluruh culling.
   if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image')) {
     return Promise.resolve(null)
   }
@@ -62,36 +125,38 @@ export function decodeOnce(dataUrl: string, maxSide = 384): Promise<ImageData | 
   const cached = decodeCache.get(key)
   if (cached) return cached
   // batasi cache agar tidak bocor memori (LRU sederhana)
-  if (decodeCache.size > 60) {
+  if (decodeCache.size > 24) {
     const first = decodeCache.keys().next().value
     if (first) decodeCache.delete(first)
   }
-  const p = new Promise<ImageData | null>((resolve) => {
-    const img = new Image()
-    img.onload = () => {
-      try {
-        let w = img.width, h = img.height
-        if (!w || !h) { resolve(null); return }
-        if (w > maxSide || h > maxSide) {
-          const s = Math.min(maxSide / w, maxSide / h)
-          w = Math.max(2, Math.round(w * s)); h = Math.max(2, Math.round(h * s))
-        }
-        const canvas = document.createElement('canvas')
-        canvas.width = w; canvas.height = h
-        const ctx = canvas.getContext('2d', { willReadFrequently: true })
-        if (!ctx) { resolve(null); return }
-        ctx.drawImage(img, 0, 0, w, h)
-        resolve(ctx.getImageData(0, 0, w, h))
-      } catch { resolve(null) }
-      // bebaskan referensi img agar GC cepat
-      ;(img as any).src = ''
-    }
-    img.onerror = () => resolve(null)
-    img.src = dataUrl
-  })
+  const p = (typeof createImageBitmap === 'function' && typeof OffscreenCanvas !== 'undefined')
+    ? decodeViaBitmap(dataUrl, maxSide).catch(() => null)
+    : (typeof Image === 'undefined' || typeof document === 'undefined')
+      ? Promise.resolve(null)
+      : new Promise<ImageData | null>((resolve) => {
+          const img = new Image()
+          img.onload = () => {
+            try {
+              let w = img.width, h = img.height
+              if (!w || !h) { resolve(null); return }
+              if (w > maxSide || h > maxSide) {
+                const s = Math.min(maxSide / w, maxSide / h)
+                w = Math.max(2, Math.round(w * s)); h = Math.max(2, Math.round(h * s))
+              }
+              const canvas = document.createElement('canvas')
+              canvas.width = w; canvas.height = h
+              const ctx = canvas.getContext('2d', { willReadFrequently: true })
+              if (!ctx) { resolve(null); return }
+              ctx.drawImage(img, 0, 0, w, h)
+              resolve(ctx.getImageData(0, 0, w, h))
+            } catch { resolve(null) }
+            ;(img as any).src = ''
+          }
+          img.onerror = () => resolve(null)
+          img.src = dataUrl
+        })
   decodeCache.set(key, p)
-  // hapus dari cache setelah dipakai + 30s agar tidak menumpuk (AI hanya butuh sekali)
-  p.then(() => setTimeout(() => decodeCache.delete(key), 30000))
+  p.then(() => setTimeout(() => decodeCache.delete(key), 15000))
   return p
 }
 
