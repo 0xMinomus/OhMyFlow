@@ -4,7 +4,7 @@
 
 | Version | Supported |
 |---------|-----------|
-| 1.2.x   | Yes       |
+| 2.0.x   | Yes       |
 
 ## Offline by Design
 

@@ -2,7 +2,7 @@
   <img src="public/ohmyflow.jpg" alt="OhMyFlow — AI photo culler for Windows and Linux" />
   <p><strong>AI photo culler for Windows & Linux. Pick your best shots 10x faster, 100% offline.</strong></p>
   <p>
-    <img src="https://img.shields.io/badge/version-1.2.0-blue" alt="version" />
+    <img src="https://img.shields.io/badge/version-2.0.0-blue" alt="version" />
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D4" alt="platform" />
     <img src="https://img.shields.io/badge/runtime-Electron-47848F" alt="electron" />
     <img src="https://img.shields.io/badge/AI-100%25%20on--device-success" alt="on-device AI" />
@@ -113,7 +113,7 @@ Estimates are computed by the app from your photo count and shown next to each m
 
 ### Portable Release
 
-1. Open the [Releases](https://github.com/0xMinomus/OhMyFlow/releases/latest) page and download the latest portable build (currently `OhMyFlow-v1.2-portable-win32-x64.zip`).
+1. Open the [Releases](https://github.com/0xMinomus/OhMyFlow/releases/latest) page and download the latest portable build (currently `OhMyFlow-v2.0-portable-win32-x64.zip`).
 2. Right-click the zip, choose **Extract All**, and pick a destination folder.
 3. Open the extracted folder and double-click **`OhMyFlow.exe`**.
 

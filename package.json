@@ -1,6 +1,6 @@
 {
   "name": "ohmyflow",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "description": "AI Photo Culler 100% Local for Windows & Linux",
   "author": "OhMyFlow",
   "main": "dist-electron/main.js",
