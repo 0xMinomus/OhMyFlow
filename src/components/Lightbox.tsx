@@ -5,14 +5,14 @@ import { createPadPoller } from '@/lib/gamepad'
 
 // Pre-decode LRU untuk bitmap 1:1 via app://media (tanpa base64 IPC / bloat JS heap).
 const PREDECODE_MAX = 10
-const decodedImgs = new Map<string, HTMLImageElement | null>()
+const decodedImgs = new Map<string, HTMLImageElement>()
 const inflightDecode = new Map<string, Promise<string | null>>()
 
 function mediaUrl(filePath: string, mtimeMs?: number): string {
-  return `app://media?path=${encodeURIComponent(filePath)}&v=${Math.round(mtimeMs || 0)}`
+  return `app://app/__media__?path=${encodeURIComponent(filePath)}&v=${Math.round(mtimeMs || 0)}`
 }
 
-function cacheBitmap(url: string, img: HTMLImageElement | null) {
+function cacheBitmap(url: string, img: HTMLImageElement) {
   decodedImgs.delete(url)
   decodedImgs.set(url, img)
   while (decodedImgs.size > PREDECODE_MAX) {
@@ -25,15 +25,15 @@ function cacheBitmap(url: string, img: HTMLImageElement | null) {
 }
 
 function predecodeUrl(url: string): Promise<string | null> {
-  if (decodedImgs.has(url)) {
-    const hit = decodedImgs.get(url)!
+  const existing = decodedImgs.get(url)
+  if (existing) {
     decodedImgs.delete(url)
-    decodedImgs.set(url, hit)
-    return Promise.resolve(hit ? url : null)
+    decodedImgs.set(url, existing)
+    return Promise.resolve(url)
   }
   const active = inflightDecode.get(url)
   if (active) return active
-  const p = new Promise<string | null>((resolve) => {
+  const attempt = (retriesLeft: number): Promise<string | null> => new Promise((resolve) => {
     const img = new Image()
     img.decoding = 'async'
     img.onload = () => {
@@ -42,11 +42,12 @@ function predecodeUrl(url: string): Promise<string | null> {
       else done()
     }
     img.onerror = () => {
-      cacheBitmap(url, null)
-      resolve(null)
+      if (retriesLeft > 0) setTimeout(() => { void attempt(retriesLeft - 1).then(resolve) }, 80)
+      else resolve(null)
     }
     img.src = url
-  }).finally(() => { inflightDecode.delete(url) })
+  })
+  const p = attempt(1).finally(() => { inflightDecode.delete(url) })
   inflightDecode.set(url, p)
   return p
 }
@@ -173,7 +174,7 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
       const hit = decodedImgs.get(url)!
       decodedImgs.delete(url)
       decodedImgs.set(url, hit)
-      setFull(hit ? url : null)
+      setFull(url)
       setLoading(false)
       preloadTimer = schedulePreload()
       return () => { dead = true; window.clearTimeout(preloadTimer) }
@@ -195,7 +196,7 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
     let dead = false
     const url = mediaUrl(burstBest.previewPath || burstBest.filePath, burstBest.mtimeMs)
     if (decodedImgs.has(url)) {
-      setBestFull(decodedImgs.get(url) ? url : null)
+      setBestFull(url)
       return
     }
     void predecodeUrl(url).then((readyUrl) => {
@@ -300,6 +301,7 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
           </div>
         ) : full ? (
           <img
+            key={`full:${p.id}`}
             src={full}
             alt={p.fileName}
             draggable={false}
@@ -308,11 +310,12 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
           />
         ) : thumb ? (
           <img
+            key={`thumb:${p.id}`}
             src={thumb}
             alt={p.fileName}
             draggable={false}
             onClick={(e)=> e.stopPropagation()}
-            className={`max-h-full max-w-full rounded-sm border border-flow-700 object-contain ${loading ? 'opacity-60' : ''}`}
+            className={`h-full w-full rounded-sm border border-flow-700 object-contain ${loading ? 'opacity-60' : ''}`}
           />
         ) : (
           <div

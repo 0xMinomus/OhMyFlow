@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } from 'electron'
-import { pathToFileURL } from 'url'
 import { join, extname, resolve } from 'path'
+import { createReadStream } from 'fs'
+import { Readable } from 'stream'
 import { access, mkdir, readdir, readFile, stat, unlink, writeFile } from 'fs/promises'
 import { createHash } from 'crypto'
 import Module, { createRequire } from 'module'
@@ -97,7 +98,7 @@ app.whenReady().then(async () => {
     try {
       if (req.method !== 'GET') return new Response('method not allowed', { status: 405 })
       const u = new URL(req.url)
-      if (u.hostname === 'media') {
+      if (u.hostname === 'media' || (u.hostname === 'app' && u.pathname === '/__media__')) {
         const target = u.searchParams.get('path')
         if (!target || !isPathInsideRoots(target, allowedMediaRoots)) {
           return new Response('forbidden', { status: 403 })
@@ -107,12 +108,19 @@ app.whenReady().then(async () => {
         if (!st.isFile()) return new Response('not found', { status: 404 })
         const ext = extname(target).toLowerCase()
         if (WEB_MIME[ext]) {
-          const res = await net.fetch(pathToFileURL(target).href)
-          const headers = new Headers(res.headers)
-          headers.set('Content-Type', WEB_MIME[ext])
-          headers.set('Cache-Control', 'private, max-age=300')
-          headers.set('Cross-Origin-Resource-Policy', 'cross-origin')
-          return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
+          const stream = createReadStream(target, { highWaterMark: 256 * 1024 })
+          if (req.signal) {
+            req.signal.addEventListener('abort', () => stream.destroy(), { once: true })
+          }
+          return new Response(Readable.toWeb(stream) as unknown as ConstructorParameters<typeof Response>[0], {
+            status: 200,
+            headers: {
+              'Content-Type': WEB_MIME[ext],
+              'Content-Length': String(st.size),
+              'Cache-Control': 'private, max-age=300',
+              'Cross-Origin-Resource-Policy': 'cross-origin',
+            },
+          })
         }
         if (RAW_EXTS.has(ext)) {
           const rKey = `${target}|${st.size}|${Math.round(st.mtimeMs)}`
