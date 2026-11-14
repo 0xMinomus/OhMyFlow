@@ -39,7 +39,7 @@ async function run(bundlePath) {
   const analyze = async (src, size) => {
     const fp = src.startsWith('harness:') ? src.slice(8) : src
     const s = Math.max(128, Math.min(768, Math.round(size)))
-    const { data, info } = await sharp(fp, { failOnError: false }).rotate()
+    const { data, info } = await sharp(fp, { failOn: 'none' }).rotate()
       .resize(s, s, { fit: 'inside', withoutEnlargement: true })
       .ensureAlpha().raw().toBuffer({ resolveWithObject: true })
     return analyzeImageData({ data: new Uint8ClampedArray(data), width: info.width, height: info.height })

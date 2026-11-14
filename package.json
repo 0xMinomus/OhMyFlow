@@ -22,7 +22,8 @@
     "dist:linux": "npm run build && npm run build:electron && electron-builder --linux"
   },
   "dependencies": {
-    "sharp": "^0.33.4"
+    "@img/sharp-wasm32": "^0.35.5",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@types/node": "^20.12.0",
@@ -54,6 +55,10 @@
       "build/icon.*",
       "package.json"
     ],
+    "asarUnpack": [
+      "**/node_modules/sharp/**/*",
+      "**/node_modules/@img/**/*"
+    ],
     "directories": {
       "buildResources": "build",
       "output": "release"
@@ -63,7 +68,10 @@
       "icon": "build/icon.ico"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Graphics",
       "icon": "build/icon-512.png",
       "maintainer": "0xMinomus"

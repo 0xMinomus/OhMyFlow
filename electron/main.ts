@@ -2,6 +2,8 @@ import { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } from 'elect
 import { join, normalize, resolve, extname, basename, dirname } from 'path'
 import { existsSync, readdirSync, statSync, writeFileSync, readFileSync, unlinkSync, mkdirSync, renameSync, copyFileSync } from 'fs'
 import { createHash } from 'crypto'
+import Module, { createRequire } from 'module'
+import type sharpType from 'sharp'
 import { scanFolder, RAW_EXTS } from './scan'
 import { buildXmp, type XmpMeta } from './xmp'
 
@@ -114,11 +116,40 @@ function thumbKey(filePath: string, size: number, mtimeMs: number): string {
   return createHash('md5').update(`${filePath}|${size}|${Math.round(mtimeMs)}`).digest('hex')
 }
 
+let cachedSharp: typeof sharpType | null = null
+function getSharp(): typeof sharpType {
+  if (cachedSharp) return cachedSharp
+  const nodeRequire = createRequire(__filename)
+  // Di Linux Electron, binary native @img/sharp-linux-* bentrok dengan libglib sistem
+  // yang di-link Electron (VIPS_IS_OBJECT abort / SIGSEGV). Pakai @img/sharp-wasm32.
+  if (process.platform === 'linux' && process.versions.electron) {
+    try {
+      nodeRequire.resolve('@img/sharp-wasm32/sharp.node')
+      const M = Module as unknown as { _load: (req: string, parent: unknown, isMain: boolean) => unknown }
+      const origLoad = M._load
+      M._load = function (req: string, parent: unknown, isMain: boolean) {
+        if (typeof req === 'string' && req.startsWith('@img/sharp-linux')) {
+          throw Object.assign(new Error('skip native sharp on Electron Linux'), { code: 'MODULE_NOT_FOUND' })
+        }
+        return origLoad.call(this, req, parent, isMain)
+      }
+      try {
+        cachedSharp = nodeRequire('sharp') as typeof sharpType
+        return cachedSharp
+      } finally {
+        M._load = origLoad
+      }
+    } catch {}
+  }
+  cachedSharp = nodeRequire('sharp') as typeof sharpType
+  return cachedSharp
+}
+
 async function makeThumbnail(sourcePath: string, cachePath: string): Promise<Buffer | null> {
   try {
     // lazy-load sharp agar startup tetap ringan
-    const sharp = (await import('sharp')).default
-    const buf = await sharp(sourcePath, { failOnError: false })
+    const sharp = getSharp()
+    const buf = await sharp(sourcePath, { failOn: 'none' })
       .rotate() // auto-orient EXIF
       .resize(480, 480, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 62, mozjpeg: false })
@@ -141,9 +172,9 @@ function analysisCacheDir(): string {
 
 async function makeAnalysisImage(sourcePath: string, cachePath: string, maxSide: number): Promise<Buffer | null> {
   try {
-    const sharp = (await import('sharp')).default
+    const sharp = getSharp()
     const size = Math.max(320, Math.min(1600, Math.round(maxSide)))
-    const buf = await sharp(sourcePath, { failOnError: false })
+    const buf = await sharp(sourcePath, { failOn: 'none' })
       .rotate()
       .resize(size, size, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 85, mozjpeg: false })
@@ -289,8 +320,8 @@ ipcMain.handle('fs:readImageAsDataUrl', async (_e, filePath: string) => {
 
     // tiff/bmp/heic/heif/… tidak dirender Chromium → decode via sharp ke JPEG.
     // Import dinamis: sharp berat, jangan dibebankan saat startup main process.
-    const sharp = (await import('sharp')).default
-    const buf = await sharp(filePath, { failOnError: false })
+    const sharp = getSharp()
+    const buf = await sharp(filePath, { failOn: 'none' })
       .rotate()
       .jpeg({ quality: 90 })
       .toBuffer()
