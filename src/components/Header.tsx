@@ -82,7 +82,7 @@ export function Header() {
   }, [capture])
   return (
     <div className="shrink-0 select-none">
-    <div className="h-16 flex items-center justify-between px-4 bg-flow-900 border-b border-flow-600" style={{ WebkitAppRegion: 'drag' } as any}>
+    <div data-tauri-drag-region className="h-16 flex items-center justify-between px-4 bg-flow-900 border-b border-flow-600">
       <div className="flex items-center gap-2.5 min-w-0">
         <img
           src="logo.png"
@@ -100,7 +100,7 @@ export function Header() {
           <div className="font-mono text-xs text-zinc-500 truncate">Culling made simple.</div>
         </div>
       </div>
-      <div className="flex items-center gap-1 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
+      <div className="flex items-center gap-1 shrink-0">
         <button
           onClick={()=> { setOpen(o=>!o); setCapture(null); setPadCapture(null) }}
           aria-label={t('Pengaturan', 'Settings')}

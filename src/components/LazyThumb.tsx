@@ -55,6 +55,7 @@ export function LazyThumb({ item, className }: { item: PhotoItem; className?: st
         className={className ?? 'w-full h-full object-cover'}
         loading="lazy"
         decoding="async"
+        onError={()=> { setUrl(null) }}
         draggable={false}
         alt={item.fileName}
       />

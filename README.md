@@ -4,7 +4,7 @@
   <p>
     <img src="https://img.shields.io/badge/version-2.0.0-blue" alt="version" />
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-0078D4" alt="platform" />
-    <img src="https://img.shields.io/badge/runtime-Electron-47848F" alt="electron" />
+    <img src="https://img.shields.io/badge/runtime-Tauri%202%20%2B%20Rust-orange" alt="tauri" />
     <img src="https://img.shields.io/badge/AI-100%25%20on--device-success" alt="on-device AI" />
     <img src="https://img.shields.io/badge/license-MIT-green" alt="license" />
   </p>
@@ -105,8 +105,8 @@ Estimates are computed by the app from your photo count and shown next to each m
 ### Requirements
 
 - **Windows 10/11 or Linux (x64).**
-- **[Node.js](https://nodejs.org/) 20 or newer** — only needed to build from source.
-- Photo processing runs on your CPU through ONNX Runtime WebAssembly. No GPU, no account, no extra codec pack.
+- **[Node.js](https://nodejs.org/) 20 or newer** and **[Rust](https://rustup.rs/) 1.80 or newer** — only needed to build from source.
+- Photo processing runs 100% natively on your CPU through a multi-threaded Rust engine with SIMD acceleration (`rayon`, `image`, `fast_image_resize`) and embedded ONNX inference (`tract-onnx`). No GPU, no RTX, no account, no extra codec pack needed.
 - Internet access is only required to download a release or to install the build dependencies.
 
 ### Portable Release
@@ -124,12 +124,11 @@ git clone https://github.com/0xMinomus/OhMyFlow.git
 cd OhMyFlow
 npm ci
 
-# development: Vite dev server plus the Electron app, with hot reload
-npm run dev
+# development: Vite dev server plus Tauri 2 desktop shell, with hot reload
+npm run tauri:dev
 
-# portable Windows build (lands in release/OhMyFlow-win32-x64/OhMyFlow.exe)
-npm run pack
-```
+# production Linux bundle (lands in src-tauri/target/release/bundle/appimage/)
+npm run tauri:build
 
 `npm ci` installs exactly the dependency versions recorded in `package-lock.json`. The build writes the renderer to `dist/`, the Electron main process and preload script to `dist-electron/`, and the ONNX Runtime WebAssembly files to `dist/ort/`.
 
@@ -139,19 +138,13 @@ npm run pack
 
 | Command | What it does |
 |---------|--------------|
-| `npm run dev` | Vite dev server on port 5173; the Electron plugin launches the app, hot-reloads the UI, and restarts the main process on change |
-| `npm run typecheck` | Type-check the renderer and preload (`tsconfig.json`) plus the Electron main process (`tsconfig.electron.json`) |
-| `npm test` | Run automated unit & integration tests (`tests/unit.test.ts`) |
-| `npm run build` | Type-check both projects, build the renderer to `dist/`, build the main process and preload to `dist-electron/`, and copy the ONNX runtime files to `dist/ort/` |
-| `npm run copy:ort` | Copy the ONNX Runtime WebAssembly files from `node_modules` into `dist/ort/` |
-| `npm run build:electron` | Compile the Electron main process and preload to `dist-electron/main.js` and `dist-electron/preload.js` |
-| `npm start` | Launch `dist-electron/main.js` from an existing build — run `npm run build` first |
-| `npm run preview` | Preview the production renderer build |
-| `npm run pack` | Full build plus `electron-packager` output for Windows x64 in `release/OhMyFlow-win32-x64/` |
-| `npm run pack:linux` | Full build plus `electron-packager` output for Linux x64 in `release/OhMyFlow-linux-x64/` |
-| `npm run dist:win` | Full build plus an `electron-builder` NSIS installer for Windows x64 |
-| `npm run dist:linux` | Full build plus `electron-builder` AppImage and deb packages for Linux |
-
+| `npm run dev` | Launch Vite dev server alone |
+| `npm run tauri:dev` | Launch Vite dev server and Tauri desktop app with hot reload |
+| `npm run typecheck` | Type-check frontend TypeScript (`tsconfig.json`) |
+| `npm test` | Run native Rust engine unit and integration test suite (`cargo test --test engine_tests`) |
+| `npm run build` | Build frontend production bundle to `dist/` |
+| `npm run tauri:build` | Build production Linux release executable and AppImage package |
+| `npm run tauri:build:win` | Cross-compile production Windows x64 binary via `cargo-xwin` |
 ## Supported File Formats
 
 | Category | Extensions |
@@ -179,29 +172,26 @@ For the full security model, including the model supply chain and path-traversal
 
 ```
 OhMyFlow/
-├── electron/
-│   ├── main.ts          # Main process: IPC, thumbnail and analysis caches, file export
-│   ├── scan.ts          # Folder scan, supported extensions, RAW+JPG pairing
-│   └── preload.ts       # Secure renderer-to-main bridge (contextBridge)
+├── src-tauri/           # Native Rust engine and Tauri 2 application
+│   ├── Cargo.toml       # Dependencies (tauri 2, rayon, tract-onnx, image, fast_image_resize)
+│   ├── tauri.conf.json  # Window configuration, capabilities, and strict CSP
+│   └── src/
+│       ├── lib.rs       # Tauri commands, custom media:// streaming protocol, and cache pruner
+│       ├── fs_ops.rs    # Folder scan, RAW+JPG pairing, collision-safe file export
+│       ├── session.rs   # Per-folder JSON session save/restore
+│       ├── cache.rs     # Bounded LRU thumbnail/session disk cache pruner
+│       └── engine/      # Multi-threaded AI culling engine (pure Rust + SIMD)
+│           ├── blur.rs, aesthetic.rs, composition.rs, subject.rs, motion.rs, tilt.rs
+│           ├── face.rs, onnx.rs, eye_roi.rs, duplicate.rs, culler.rs, raw_preview.rs
 ├── src/
-│   ├── components/      # UI: folder picker, mode selector, grid, lightbox,
-│   │                    #   move modal, settings panel, header
-│   ├── lib/
-│   │   ├── ai-engine/   # Culling engine: blur, aesthetic, composition, duplicate,
-│   │   │                #   face, subject, motion, tilt, pipeline, reasons, and
-│   │   │                #   culler (orchestration plus per-mode presets)
-│   │   ├── ml/          # Local ONNX face detector (fail-safe) and eye ROI helpers
-│   │   ├── gamepad.ts   # Controller support (no dependencies)
-│   │   ├── version.ts   # Single source of truth for APP_VERSION
-│   │   └── thumbCache.ts
-│   ├── store/           # App state: settings, keybinds, controller binds
+│   ├── lib/bridge.ts    # Type-safe Tauri IPC bridge (invoke, convertFileSrc, window controls)
+│   ├── components/      # UI: folder picker, mode selector, grid, lightbox, move modal, header
+│   ├── store/           # App state: settings, keybinds, controller binds, undo stack
 │   └── types/
 ├── public/
-│   ├── models/          # Bundled ONNX face model (MIT licensed)
+│   ├── models/          # Bundled ONNX face model (MIT licensed, verified with SHA-256)
 │   └── *.jpg, *.png     # Banner, app logo, hero image
-├── scripts/             # ONNX WebAssembly copy helper and the evaluation harness
-├── build/               # Icons (ico/png) and packaging assets
-└── test-photos/         # Solid-colour images for UI smoke tests
+└── test-photos/         # Solid-colour images for smoke tests
 ```
 
 ## Engine Evaluation Harness

@@ -1,6 +1,9 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import { installTauriBridge } from './lib/bridge'
+
+installTauriBridge()
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

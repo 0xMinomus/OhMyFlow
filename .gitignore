@@ -4,6 +4,8 @@ node_modules/
 # ── Build outputs (diregenerasi via `npm run pack`) ──────────
 dist/
 dist-electron/
+src-tauri/target/
+src-tauri/gen/
 release/
 *.tsbuildinfo
 public/ort/

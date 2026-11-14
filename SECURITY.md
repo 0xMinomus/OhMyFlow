@@ -10,44 +10,45 @@
 
 OhMyFlow processes everything on your own machine:
 
-- **Zero network requests for photo processing.** The only `fetch` calls in the
-  codebase load the bundled ONNX model file (`models/ultraface-320.onnx`) and
-  local app files through the internal `app://` protocol. No remote URLs exist
-  anywhere in the source.
+- **Zero network requests for photo processing.** The application never contacts
+  any external server or cloud service. No remote URLs exist in the codebase.
 - **No API keys, no cloud, no telemetry, no analytics.** There is nothing to
   leak because nothing is collected or transmitted.
-- **No runtime downloads.** The AI model and WebAssembly runtime ship inside
-  the app package. The app never downloads code or models at runtime.
+- **No runtime downloads.** The AI model (`UltraFace RFB-320`) is embedded directly
+  into the native executable binary at compile time (`include_bytes!`). The app
+  never downloads code or models at runtime.
 
-## Renderer Isolation
+## Tauri 2 Architecture & Process Isolation
 
-- `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`. The UI cannot
-  touch the disk or Node APIs directly.
-- All disk access goes through a minimal `contextBridge` surface (`window.ohmyflow`)
-  handled by the main process, with local path and `app:getPath` allowlist validation.
-- The renderer is served over a custom `app://` protocol (not `file://`) with
-  `Cross-Origin-Opener-Policy`, `Cross-Origin-Embedder-Policy`, and a strict
-  `Content-Security-Policy` (`default-src 'self' app:; script-src 'self' 'wasm-unsafe-eval'`).
-  The handler only serves files inside `dist/` (traversal blocked via `path.relative`, GET only).
-- Packaged disk caches (`thumbs/`, `analysis/`) are bounded by LRU size and age pruning.
+- **No Node.js runtime in production.** The application backend is 100% native Rust
+  using Tauri 2, eliminating Node.js process vulnerabilities and Electron runtime overhead.
+- **IPC isolation.** The webview frontend only communicates with the Rust backend
+  through strictly allowed Tauri IPC commands registered in `src-tauri/capabilities/default.json`.
+- **Custom `media://` protocol security.** Full-resolution previews and thumbnails are served
+  via a custom streaming protocol strictly guarded by `is_path_inside_roots`: only files
+  inside explicitly scanned folders are accessible. Path traversal attempts (`..`, sibling prefixes)
+  are rejected with HTTP 403 Forbidden.
+- **Strict Content Security Policy (CSP).** The webview enforces a strict CSP in `tauri.conf.json`:
+  `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' media: http://media.localhost https://media.localhost data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; frame-ancestors 'none'`.
+- **Bounded disk cache.** The thumbnail and session caches in the app data/cache directories
+  are pruned automatically using LRU size (max 250 MB / 50 MB) and age (14 days / 30 days) limits.
 
 ## File Safety
 
 - **Originals are never modified, moved, or deleted** during scanning or culling.
-- Exporting files requires an explicit destination picked by you in a folder
+- Exporting files requires an explicit destination picked by you in a native folder
   dialog, shows the file count first, carries RAW+JPG pairs along,
   and auto-numbers name collisions.
 - Personal photo folders, build output, logs, and secrets are git-ignored and
-  excluded from the packaged app.
+  excluded from packaged builds.
 
 ## AI Model Supply Chain
 
-- Face model: UltraFace RFB-320 (MIT licensed), bundled at
-  `public/models/ultraface-320.onnx` with a recorded SHA-256 checksum that is
-  verified when the model loads. A mismatch counts as a load failure.
-- If the model or WebAssembly runtime fails to load — including a checksum
-  mismatch — the app silently falls back to the built-in heuristics. A model
-  failure can never crash culling.
+- Face model: UltraFace RFB-320 (MIT licensed), embedded into the binary at
+  compile time with a recorded SHA-256 checksum (`34CD7E60AEFF28744C657DE7A3DC64E872D506741DE66987F3426F2B79F88017`)
+  that is verified upon initial execution. A mismatch counts as a load failure.
+- If the model fails to load — including a checksum mismatch — the app silently
+  falls back to the built-in heuristics. A model failure can never crash culling.
 
 ## Reporting a Vulnerability
 

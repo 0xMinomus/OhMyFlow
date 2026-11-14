@@ -1,19 +1,16 @@
-// Thumbnail cache: memori LRU + disk cache (main) + dedup request + batch prefetch.
-// Tujuannya: grid 1500 foto tetap ringan — hanya thumbnail visible yang di-load,
-// masing-masing ~20-50KB (bukan 5-30MB full-res).
-
+// Thumbnail cache: menyimpan media:// URL ringan di memori (zero base64 IPC / bloat).
 import type { PhotoItem } from '@/types'
+import { mediaUrl } from './bridge'
 
-const memCache = new Map<string, string | null>() // filePath -> thumb dataUrl (null = RAW/gagal)
-const inflight = new Map<string, Promise<string | null>>()
-const MAX_MEM = 400
+const memCache = new Map<string, string | null>()
+const MAX_MEM = 2000
 
 function memSet(key: string, val: string | null) {
   if (memCache.has(key)) memCache.delete(key)
   memCache.set(key, val)
   if (memCache.size > MAX_MEM) {
     const first = memCache.keys().next().value
-    if (first) memCache.delete(first)
+    if (first !== undefined) memCache.delete(first)
   }
 }
 
@@ -25,58 +22,25 @@ export function setMemThumb(filePath: string, url: string | null) {
   memSet(filePath, url)
 }
 
-/** Ambil 1 thumbnail (cached). Aman dipanggil dari banyak card bersamaan (dedup). */
 export function fetchThumb(item: PhotoItem): Promise<string | null> {
   const key = item.filePath
   const mem = getMemThumb(key)
   if (mem !== undefined) return Promise.resolve(mem)
-  if (item.thumbUrl !== undefined && item.thumbUrl !== null) {
-    memSet(key, item.thumbUrl)
-    return Promise.resolve(item.thumbUrl)
-  }
-  const run = inflight.get(key)
-  if (run) return run
-  const p = (async () => {
-    try {
-      const res = await window.ohmyflow.getThumbnail(item.filePath, item.previewPath)
-      const url = res?.dataUrl ?? null
-      memSet(key, url)
-      return url
-    } catch {
-      memSet(key, null)
-      return null
-    } finally {
-      inflight.delete(key)
-    }
-  })()
-  inflight.set(key, p)
-  return p
+  const url = mediaUrl(item.previewPath || item.filePath, 'thumb', item.mtimeMs)
+  memSet(key, url)
+  return Promise.resolve(url)
 }
 
-/** Prefetch batch (max 12/IPC) untuk AI culling — jauh lebih hemat IPC daripada satu-satu. */
 export async function prefetchThumbsBatch(items: PhotoItem[]): Promise<Map<string, string | null>> {
   const out = new Map<string, string | null>()
-  const missing = items.filter((i) => getMemThumb(i.filePath) === undefined && !(i.thumbUrl))
-  // yang sudah ada langsung kembalikan
   for (const i of items) {
     const m = getMemThumb(i.filePath)
-    if (m !== undefined) out.set(i.filePath, m)
-    else if (i.thumbUrl) { memSet(i.filePath, i.thumbUrl); out.set(i.filePath, i.thumbUrl) }
-  }
-  // batch 12
-  for (let k = 0; k < missing.length; k += 12) {
-    const chunk = missing.slice(k, k + 12)
-    try {
-      const res = await window.ohmyflow.getThumbnailsBatch(
-        chunk.map((c) => ({ filePath: c.filePath, previewPath: c.previewPath }))
-      )
-      for (const c of chunk) {
-        const url = res?.[c.filePath]?.dataUrl ?? null
-        memSet(c.filePath, url)
-        out.set(c.filePath, url)
-      }
-    } catch {
-      for (const c of chunk) { memSet(c.filePath, null); out.set(c.filePath, null) }
+    if (m !== undefined) {
+      out.set(i.filePath, m)
+    } else {
+      const url = mediaUrl(i.previewPath || i.filePath, 'thumb', i.mtimeMs)
+      memSet(i.filePath, url)
+      out.set(i.filePath, url)
     }
   }
   return out
@@ -84,55 +48,16 @@ export async function prefetchThumbsBatch(items: PhotoItem[]): Promise<Map<strin
 
 export function clearMemThumbs() {
   memCache.clear()
-  inflight.clear()
 }
 
-// ---- Analysis image cache (v2, High saja): memori kecil + disk main process ----
-const memAnalysis = new Map<string, string | null>()
-const MAX_ANALYSIS_MEM = 60
-
-function memASet(key: string, val: string | null) {
-  if (memAnalysis.has(key)) memAnalysis.delete(key)
-  memAnalysis.set(key, val)
-  if (memAnalysis.size > MAX_ANALYSIS_MEM) {
-    const first = memAnalysis.keys().next().value
-    if (first) memAnalysis.delete(first)
-  }
+export async function prefetchAnalysisBatch(): Promise<Map<string, string | null>> {
+  return new Map()
 }
 
-/** Prefetch analysis image (1280px q85) untuk AI — High saja. Bounded, dedup per batch. */
-export async function prefetchAnalysisBatch(items: PhotoItem[], maxSide: number): Promise<Map<string, string | null>> {
-  const out = new Map<string, string | null>()
-  const missing = items.filter((i) => !memAnalysis.has(i.filePath) && !(i as any).analysisUrl)
-  for (const i of items) {
-    if (memAnalysis.has(i.filePath)) out.set(i.filePath, memAnalysis.get(i.filePath)!)
-    else if ((i as any).analysisUrl) { memASet(i.filePath, (i as any).analysisUrl); out.set(i.filePath, (i as any).analysisUrl) }
-  }
-  for (let k = 0; k < missing.length; k += 12) {
-    const chunk = missing.slice(k, k + 12)
-    try {
-      const res = await window.ohmyflow.getAnalysisBatch(
-        chunk.map((c) => ({ filePath: c.filePath, previewPath: c.previewPath })), maxSide)
-      for (const c of chunk) {
-        const url = res?.[c.filePath]?.dataUrl ?? null
-        memASet(c.filePath, url)
-        out.set(c.filePath, url)
-      }
-    } catch {
-      for (const c of chunk) { memASet(c.filePath, null); out.set(c.filePath, null) }
-    }
-  }
-  return out
-}
-
-/** Buang cache milik file yang sudah dipindah/dihapus agar tidak tampil basi. */
 export function dropMemThumbs(filePaths: string[]) {
   for (const k of filePaths) {
     memCache.delete(k)
-    inflight.delete(k)
   }
 }
 
-export function clearMemAnalysis() {
-  memAnalysis.clear()
-}
+export function clearMemAnalysis() {}

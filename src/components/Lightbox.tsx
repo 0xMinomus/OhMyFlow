@@ -2,14 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, appStore } from '@/store/useAppStore'
 import { getMemThumb } from '@/lib/thumbCache'
 import { createPadPoller } from '@/lib/gamepad'
+import { mediaUrl as buildMediaUrl } from '@/lib/bridge'
 
-// Pre-decode LRU untuk bitmap 1:1 via app://media (tanpa base64 IPC / bloat JS heap).
+// Pre-decode LRU untuk bitmap 1:1 via media:// (tanpa base64 IPC / bloat JS heap).
 const PREDECODE_MAX = 10
 const decodedImgs = new Map<string, HTMLImageElement>()
 const inflightDecode = new Map<string, Promise<string | null>>()
 
 function mediaUrl(filePath: string, mtimeMs?: number): string {
-  return `app://app/__media__?path=${encodeURIComponent(filePath)}&v=${Math.round(mtimeMs || 0)}`
+  return buildMediaUrl(filePath, 'full', mtimeMs)
 }
 
 function cacheBitmap(url: string, img: HTMLImageElement) {
