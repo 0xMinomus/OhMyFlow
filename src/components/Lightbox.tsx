@@ -3,24 +3,52 @@ import { useStore, appStore } from '@/store/useAppStore'
 import { getMemThumb } from '@/lib/thumbCache'
 import { createPadPoller } from '@/lib/gamepad'
 
-// Cache pratinjau full-res (LRU 8) supaya navigasi bolak-balik tidak decode ulang.
-const PREVIEW_MAX = 8
-const previewCache = new Map<string, string | null>()
-function previewCacheGet(key: string): string | null | undefined {
-  if (!previewCache.has(key)) return undefined
-  const v = previewCache.get(key)!
-  previewCache.delete(key)
-  previewCache.set(key, v)
-  return v
+// Pre-decode LRU untuk bitmap 1:1 via app://media (tanpa base64 IPC / bloat JS heap).
+const PREDECODE_MAX = 10
+const decodedImgs = new Map<string, HTMLImageElement | null>()
+const inflightDecode = new Map<string, Promise<string | null>>()
+
+function mediaUrl(filePath: string, mtimeMs?: number): string {
+  return `app://media?path=${encodeURIComponent(filePath)}&v=${Math.round(mtimeMs || 0)}`
 }
-function previewCacheSet(key: string, url: string | null) {
-  previewCache.delete(key)
-  previewCache.set(key, url)
-  while (previewCache.size > PREVIEW_MAX) {
-    const oldest = previewCache.keys().next().value
+
+function cacheBitmap(url: string, img: HTMLImageElement | null) {
+  decodedImgs.delete(url)
+  decodedImgs.set(url, img)
+  while (decodedImgs.size > PREDECODE_MAX) {
+    const oldest = decodedImgs.keys().next().value
     if (oldest === undefined) break
-    previewCache.delete(oldest)
+    const evicted = decodedImgs.get(oldest)
+    decodedImgs.delete(oldest)
+    if (evicted) evicted.src = ''
   }
+}
+
+function predecodeUrl(url: string): Promise<string | null> {
+  if (decodedImgs.has(url)) {
+    const hit = decodedImgs.get(url)!
+    decodedImgs.delete(url)
+    decodedImgs.set(url, hit)
+    return Promise.resolve(hit ? url : null)
+  }
+  const active = inflightDecode.get(url)
+  if (active) return active
+  const p = new Promise<string | null>((resolve) => {
+    const img = new Image()
+    img.decoding = 'async'
+    img.onload = () => {
+      const done = () => { cacheBitmap(url, img); resolve(url) }
+      if (typeof img.decode === 'function') img.decode().then(done, done)
+      else done()
+    }
+    img.onerror = () => {
+      cacheBitmap(url, null)
+      resolve(null)
+    }
+    img.src = url
+  }).finally(() => { inflightDecode.delete(url) })
+  inflightDecode.set(url, p)
+  return p
 }
 
 function XIcon() {
@@ -127,52 +155,54 @@ export function Lightbox({ ids, initialId, lang, onClose }: {
   useEffect(() => {
     let dead = false
     if (!p) { setFull(null); return }
-    const key = p.previewPath || p.filePath
-    const preloadNeighbor = (nId?: string) => {
-      if (!nId) return
-      const np = photos.find(x => x.id === nId)
-      if (!np) return
-      const nk = np.previewPath || np.filePath
-      if (previewCacheGet(nk) !== undefined) return
-      window.ohmyflow.readImageAsDataUrl(nk).then(r => { previewCacheSet(nk, r?.dataUrl ?? null) }).catch(() => {})
+    const url = mediaUrl(p.previewPath || p.filePath, p.mtimeMs)
+    const schedulePreload = () => {
+      return window.setTimeout(() => {
+        if (dead) return
+        for (const offset of [1, -1, 2]) {
+          const nId = navIds[idx + offset]
+          if (!nId) continue
+          const np = photos.find(x => x.id === nId)
+          if (!np) continue
+          void predecodeUrl(mediaUrl(np.previewPath || np.filePath, np.mtimeMs))
+        }
+      }, 80)
     }
-    const cached = previewCacheGet(key)
-    if (cached !== undefined) {
-      setFull(cached)
+    let preloadTimer: number | undefined
+    if (decodedImgs.has(url)) {
+      const hit = decodedImgs.get(url)!
+      decodedImgs.delete(url)
+      decodedImgs.set(url, hit)
+      setFull(hit ? url : null)
       setLoading(false)
-      preloadNeighbor(navIds[idx + 1])
-      preloadNeighbor(navIds[idx - 1])
-      return
+      preloadTimer = schedulePreload()
+      return () => { dead = true; window.clearTimeout(preloadTimer) }
     }
     setFull(null)
     setLoading(true)
-    window.ohmyflow.readImageAsDataUrl(key).then(r => {
-      const url = r?.dataUrl ?? null
-      previewCacheSet(key, url)
-      if (!dead) {
-        setFull(url)
-        setLoading(false)
-        preloadNeighbor(navIds[idx + 1])
-        preloadNeighbor(navIds[idx - 1])
-      }
-    }).catch(() => { if (!dead) setLoading(false) })
-    return () => { dead = true }
-  }, [p?.filePath, p?.previewPath, idx]) // eslint-disable-line react-hooks/exhaustive-deps
+    void predecodeUrl(url).then((readyUrl) => {
+      if (dead) return
+      setFull(readyUrl)
+      setLoading(false)
+      preloadTimer = schedulePreload()
+    })
+    return () => { dead = true; window.clearTimeout(preloadTimer) }
+  }, [p?.filePath, p?.previewPath, p?.mtimeMs, idx]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!burstBest) { setCompare(false); setBestFull(null); return }
     if (!compare) return
     let dead = false
-    const bKey = burstBest.previewPath || burstBest.filePath
-    const cached = previewCacheGet(bKey)
-    if (cached !== undefined) { setBestFull(cached); return }
-    window.ohmyflow.readImageAsDataUrl(bKey).then(r => {
-      const url = r?.dataUrl ?? null
-      previewCacheSet(bKey, url)
-      if (!dead) setBestFull(url)
-    }).catch(() => {})
+    const url = mediaUrl(burstBest.previewPath || burstBest.filePath, burstBest.mtimeMs)
+    if (decodedImgs.has(url)) {
+      setBestFull(decodedImgs.get(url) ? url : null)
+      return
+    }
+    void predecodeUrl(url).then((readyUrl) => {
+      if (!dead) setBestFull(readyUrl)
+    })
     return () => { dead = true }
-  }, [compare, burstBest?.filePath, burstBest?.previewPath]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [compare, burstBest?.filePath, burstBest?.previewPath, burstBest?.mtimeMs]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!p) return null
   const reasons = (lang==='id' ? p.reasons : p.reasonsEn) ?? []
   const thumb = p.thumbUrl ?? getMemThumb(p.filePath) ?? undefined

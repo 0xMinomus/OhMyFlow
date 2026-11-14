@@ -47,3 +47,18 @@ export function resolveBundlePath(root: string, rawPathname: string): string | n
 export function isSafeLocalPath(p: unknown): p is string {
   return typeof p === 'string' && p.length > 0 && !p.includes('\0') && isAbsolute(p)
 }
+
+export function isPathInsideRoots(filePath: string, roots: Iterable<string>): boolean {
+  if (!isSafeLocalPath(filePath)) return false
+  const targetAbs = resolve(filePath)
+  for (const root of roots) {
+    const rootAbs = resolve(root)
+    const diff = process.platform === 'win32'
+      ? relative(rootAbs.toLowerCase(), targetAbs.toLowerCase())
+      : relative(rootAbs, targetAbs)
+    if (diff === '' || diff === '.' || (!diff.startsWith('..') && !isAbsolute(diff))) {
+      return true
+    }
+  }
+  return false
+}

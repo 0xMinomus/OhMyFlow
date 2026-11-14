@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, appStore } from '@/store/useAppStore'
 import type { PhotoItem } from '@/types'
 import { LazyThumb } from './LazyThumb'
-import { getMemThumb } from '@/lib/thumbCache'
+import { getMemThumb, prefetchThumbsBatch } from '@/lib/thumbCache'
 import { MoveModal } from './MoveModal'
 import { Lightbox } from './Lightbox'
 import { Fieldset } from './Fieldset'
@@ -62,7 +62,7 @@ function ExternalIcon() {
   )
 }
 
-function PhotoCard({ p, lang, index, onOpen }: { p: PhotoItem; lang: 'id' | 'en'; index: number; onOpen: () => void }) {
+const PhotoCard = memo(function PhotoCard({ p, lang, index, onOpen }: { p: PhotoItem; lang: 'id' | 'en'; index: number; onOpen: (id: string) => void }) {
   const t = (id: string, en: string) => (lang==='id' ? id : en)
   const reasons = (lang==='id' ? p.reasons : p.reasonsEn) ?? []
   const lowConf = (p.confidence ?? 1) < 0.45
@@ -87,8 +87,8 @@ function PhotoCard({ p, lang, index, onOpen }: { p: PhotoItem; lang: 'id' | 'en'
       </div>
       <div className="aspect-[16/8.5] bg-flow-900 relative overflow-hidden">
         <div
-          onClick={onOpen}
-          onKeyDown={(e)=> { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
+          onClick={()=> onOpen(p.id)}
+          onKeyDown={(e)=> { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(p.id) } }}
           tabIndex={0}
           role="button"
           aria-label={(lang === 'id' ? 'Perbesar ' : 'Enlarge ') + p.fileName}
@@ -132,7 +132,7 @@ function PhotoCard({ p, lang, index, onOpen }: { p: PhotoItem; lang: 'id' | 'en'
       </div>
     </div>
   )
-}
+})
 
 type SortMode = 'default' | 'score' | 'focus' | 'burst'
 
@@ -180,6 +180,17 @@ export function PhotoGrid() {
   const pageItems = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
 
   useEffect(() => { setPage(0) }, [cat, sortBy])
+
+  useEffect(() => {
+    if (pageItems.length > 0) void prefetchThumbsBatch(pageItems)
+  }, [pageItems])
+
+  const filteredIdsRef = useRef<string[]>([])
+  filteredIdsRef.current = filtered.map(x => x.id)
+  const openLightbox = useCallback((id: string) => {
+    setLightIds(filteredIdsRef.current)
+    setLightId(id)
+  }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -265,7 +276,7 @@ export function PhotoGrid() {
                 p={p}
                 lang={lang}
                 index={safePage * PAGE_SIZE + i}
-                onOpen={()=> { setLightIds(filtered.map(x=>x.id)); setLightId(p.id) }}
+                onOpen={openLightbox}
               />
             ))}
           </div>

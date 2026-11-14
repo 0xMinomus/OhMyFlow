@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import sharp from 'sharp'
 
-import { ALLOWED_APP_PATHS, isSafeLocalPath, resolveBundlePath } from '../electron/security'
+import { ALLOWED_APP_PATHS, isPathInsideRoots, isSafeLocalPath, resolveBundlePath } from '../electron/security'
 import { scanFolder } from '../electron/scan'
 import { movePhotos } from '../electron/fs-ops'
 import { pruneCacheDir } from '../electron/cache'
@@ -34,6 +34,9 @@ test('isSafeLocalPath and ALLOWED_APP_PATHS enforce strict bounds', () => {
   assert.equal(isSafeLocalPath(''), false)
   assert.equal(ALLOWED_APP_PATHS.userData, true)
   assert.equal(ALLOWED_APP_PATHS.exe, undefined)
+  assert.equal(isPathInsideRoots(resolve('/tmp/shoot/a.jpg'), [resolve('/tmp/shoot')]), true)
+  assert.equal(isPathInsideRoots(resolve('/tmp/shoot-other/a.jpg'), [resolve('/tmp/shoot')]), false)
+  assert.equal(isPathInsideRoots(resolve('/etc/passwd'), [resolve('/tmp/shoot')]), false)
 })
 
 

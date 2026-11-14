@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } from 'electron'
-import { join, extname } from 'path'
+import { pathToFileURL } from 'url'
+import { join, extname, resolve } from 'path'
 import { access, mkdir, readdir, readFile, stat, unlink, writeFile } from 'fs/promises'
 import { createHash } from 'crypto'
 import Module, { createRequire } from 'module'
@@ -9,7 +10,7 @@ import { pruneCacheDir } from './cache'
 import { movePhotos, type MovePhotoItem } from './fs-ops'
 import { extractRawPreview } from './raw-preview'
 import { loadFolderSession, saveFolderSession, type FolderSession } from './session'
-import { ALLOWED_APP_PATHS, APP_CSP, isSafeLocalPath, resolveBundlePath } from './security'
+import { ALLOWED_APP_PATHS, APP_CSP, isPathInsideRoots, isSafeLocalPath, resolveBundlePath } from './security'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -25,6 +26,18 @@ const WEB_MIME: Record<string, string> = {
   '.png': 'image/png',
   '.webp': 'image/webp',
   '.gif': 'image/gif',
+  '.bmp': 'image/bmp',
+}
+
+const allowedMediaRoots = new Set<string>()
+const rawMediaCache = new Map<string, Buffer>()
+function rawCacheSet(key: string, buf: Buffer) {
+  rawMediaCache.delete(key)
+  rawMediaCache.set(key, buf)
+  if (rawMediaCache.size > 8) {
+    const oldest = rawMediaCache.keys().next().value
+    if (oldest !== undefined) rawMediaCache.delete(oldest)
+  }
 }
 
 // Skema privileged untuk renderer (standard + fetchable). Wajib sebelum ready.
@@ -84,6 +97,58 @@ app.whenReady().then(async () => {
     try {
       if (req.method !== 'GET') return new Response('method not allowed', { status: 405 })
       const u = new URL(req.url)
+      if (u.hostname === 'media') {
+        const target = u.searchParams.get('path')
+        if (!target || !isPathInsideRoots(target, allowedMediaRoots)) {
+          return new Response('forbidden', { status: 403 })
+        }
+        let st
+        try { st = await stat(target) } catch { return new Response('not found', { status: 404 }) }
+        if (!st.isFile()) return new Response('not found', { status: 404 })
+        const ext = extname(target).toLowerCase()
+        if (WEB_MIME[ext]) {
+          const res = await net.fetch(pathToFileURL(target).href)
+          const headers = new Headers(res.headers)
+          headers.set('Content-Type', WEB_MIME[ext])
+          headers.set('Cache-Control', 'private, max-age=300')
+          headers.set('Cross-Origin-Resource-Policy', 'cross-origin')
+          return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
+        }
+        if (RAW_EXTS.has(ext)) {
+          const rKey = `${target}|${st.size}|${Math.round(st.mtimeMs)}`
+          let buf = rawMediaCache.get(rKey)
+          if (buf) {
+            rawMediaCache.delete(rKey)
+            rawMediaCache.set(rKey, buf)
+          } else {
+            const extracted = await extractRawPreview(target)
+            if (!extracted) return new Response('not found', { status: 404 })
+            buf = extracted
+            rawCacheSet(rKey, buf)
+          }
+          return new Response(new Uint8Array(buf), {
+            status: 200,
+            headers: {
+              'Content-Type': 'image/jpeg',
+              'Cache-Control': 'private, max-age=300',
+              'Cross-Origin-Resource-Policy': 'cross-origin',
+            },
+          })
+        }
+        const sharp = getSharp()
+        const isLossless = ext === '.tif' || ext === '.tiff'
+        const out = isLossless
+          ? await sharp(target, { failOn: 'none' }).rotate().png({ compressionLevel: 1 }).toBuffer()
+          : await sharp(target, { failOn: 'none' }).rotate().jpeg({ quality: 95 }).toBuffer()
+        return new Response(new Uint8Array(out), {
+          status: 200,
+          headers: {
+            'Content-Type': isLossless ? 'image/png' : 'image/jpeg',
+            'Cache-Control': 'private, max-age=300',
+            'Cross-Origin-Resource-Policy': 'cross-origin',
+          },
+        })
+      }
       const root = join(__dirname, '../dist')
       const filePath = resolveBundlePath(root, u.pathname)
       if (!filePath) return new Response('forbidden', { status: 403 })
@@ -125,6 +190,7 @@ ipcMain.handle('dialog:openFolder', async () => {
 
 ipcMain.handle('fs:scanFolder', async (_e, folderPath: string) => {
   if (!isSafeLocalPath(folderPath)) throw new Error('invalid-folder-path')
+  allowedMediaRoots.add(resolve(folderPath))
   return scanFolder(folderPath)
 })
 

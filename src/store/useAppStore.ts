@@ -151,7 +151,7 @@ let state: AppState = {
     if (!cur || cur.category === cat) return
     state.undoStack = [...state.undoStack.slice(-49), { id, prev: cur.category }]
     state.photos = state.photos.map(ph=> ph.id===id? {...ph, category:cat}:ph)
-    if (state.stats) { const rest = state.photos; state.stats = { ...state.stats, picks: rest.filter(p=>p.category==='picks').length, maybe: rest.filter(p=>p.category==='maybe').length, rejects: rest.filter(p=>p.category==='rejects').length } }
+    if (state.stats) state.stats = { ...state.stats, ...countCats(state.photos) }
     emit()
     schedulePersist()
   },
@@ -160,14 +160,24 @@ let state: AppState = {
     const last = state.undoStack[state.undoStack.length - 1]
     state.undoStack = state.undoStack.slice(0, -1)
     state.photos = state.photos.map(ph=> ph.id===last.id? {...ph, category:last.prev}:ph)
-    if (state.stats) { const rest = state.photos; state.stats = { ...state.stats, picks: rest.filter(p=>p.category==='picks').length, maybe: rest.filter(p=>p.category==='maybe').length, rejects: rest.filter(p=>p.category==='rejects').length } }
+    if (state.stats) state.stats = { ...state.stats, ...countCats(state.photos) }
     emit()
     schedulePersist()
     return true
   },
   persistSession: ()=>{ persistNow() },
-  removePhotos: (ids)=>{ const gone = new Set(ids); state.photos = state.photos.filter(ph=> !gone.has(ph.id)); state.undoStack = state.undoStack.filter(u=> !gone.has(u.id)); if (state.stats) { const rest = state.photos; state.stats = { ...state.stats, total: rest.length, picks: rest.filter(p=>p.category==='picks').length, maybe: rest.filter(p=>p.category==='maybe').length, rejects: rest.filter(p=>p.category==='rejects').length } } emit(); schedulePersist() },
+  removePhotos: (ids)=>{ const gone = new Set(ids); state.photos = state.photos.filter(ph=> !gone.has(ph.id)); state.undoStack = state.undoStack.filter(u=> !gone.has(u.id)); if (state.stats) state.stats = { ...state.stats, total: state.photos.length, ...countCats(state.photos) }; emit(); schedulePersist() },
   resetSession: ()=>{ state.photos = []; state.stats = null; state.folderPath = null; state.step = 'select'; state.selectedCategory = 'all'; state.cullingProgress = null; state.undoStack = []; emit() },
+}
+
+function countCats(list: PhotoItem[]) {
+  let picks = 0, maybe = 0, rejects = 0
+  for (const p of list) {
+    if (p.category === 'picks') picks++
+    else if (p.category === 'maybe') maybe++
+    else if (p.category === 'rejects') rejects++
+  }
+  return { picks, maybe, rejects }
 }
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null
