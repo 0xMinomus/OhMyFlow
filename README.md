@@ -12,7 +12,22 @@
 
 ---
 
+## What's New in v2.0
+
+- 🚀 **Tauri 2 + Native Rust Engine:** Complete rewrite replacing Electron. Binary size dropped from **316 MB to 22.7 MB** (Windows `.exe`) and **27.7 MB** (Linux standalone), with 41% lower idle RAM.
+- ⚡ **Multi-Threaded Parallel Culling (`rayon`):** Culling utilizes all CPU cores in parallel with native SIMD image decoding, delivering ~3×–5× faster throughput without requiring any GPU or RTX hardware.
+- 🧠 **Pure-Rust Offline ONNX (`tract-onnx`):** UltraFace RFB-320 is embedded directly into the binary with compile-time SHA-256 verification. Zero WebAssembly overhead, 100% offline.
+- 📷 **Embedded JPEG RAW-Only Preview:** Full-size embedded previews are extracted natively from camera RAW files (`.RAF`, `.CR2`, `.CR3`, `.NEF`, `.ARW`, etc.) without external CLI tools, enabling full AI culling and instant Lightbox previews for RAW-only workflows.
+- 🏎️ **Native `media://` Streaming:** Eliminated heavy base64 IPC encoding. Full-res 1:1 previews stream directly from disk with debounced neighbor pre-decoding (<15 ms switch latency).
+- 🗂️ **Grid Sorting & Burst Compare:** Sort the review grid by Name, Score, Focus, or Burst Group. Compare burst peers side-by-side in Lightbox with `[ Bandingkan Burst · B ]`.
+- ↩️ **Undo & Session Restore:** Full `Ctrl+Z` / `Cmd+Z` undo stack and automatic per-folder session saving to resume review anytime.
+- 📦 **Simplified Export:** Streamlined export action moving selected buckets (`Picks`, `Maybe`, `Rejects`) into clean destination folders.
+
+---
+
 ## Table of Contents
+
+- [What's New in v2.0](#whats-new-in-v20)
 
 - [About](#about)
 - [Features](#features)
