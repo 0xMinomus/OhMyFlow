@@ -47,6 +47,7 @@ Desktop.ini
 .code-graph/
 
 # ── Private working docs (instruksi user & config lokal, bukan publik) ──
+web-ohmyflow/
 PLAN.md
 fase-update.md
 new-architecture.md
