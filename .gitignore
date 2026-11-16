@@ -17,6 +17,7 @@ FIX KERAMIK/
 bulbah/
 Foto OSIS skvela/
 sample/
+test-photos/
 
 # ── Evaluasi & benchmark (hasil run lokal & dataset ground truth) ──
 .engine-eval/
